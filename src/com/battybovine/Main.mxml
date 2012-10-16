@@ -163,6 +163,7 @@
 				
 				swfcontroller = e.currentTarget.content as MovieClip;
 				swfcontroller.addEventListener(Event.ENTER_FRAME, swfLoadCompleteHandler );
+				swfcontroller.gotoAndStop(1);
 				
 				seekbar.maximum = swfcontroller.totalFrames;
 				seekbar.value = 1;
