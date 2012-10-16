@@ -53,6 +53,8 @@
 			import mx.core.WindowedApplication;
 			import mx.collections.ArrayCollection;
 			import mx.events.CloseEvent;
+			import mx.events.CollectionEvent;
+			import mx.events.CollectionEventKind;
 			import mx.events.MenuEvent;
 			import mx.managers.PopUpManager;
 			import flash.desktop.NativeDragManager;
@@ -70,8 +72,11 @@
 			
 			
 			private function init():void {
+				filequeuedata.addEventListener(CollectionEvent.COLLECTION_CHANGE, listChangeEventHandler);
+				
 				filequeue.dataProvider = filequeuedata;
-				filequeue.addEventListener(MouseEvent.CLICK, handleListSelectItem);
+				//filequeue.addEventListener(MouseEvent.CLICK, listChangeEventHandler);
+				filequeue.addEventListener(Event.CHANGE, listCommonEventHandler);
 				this.addEventListener(NativeDragEvent.NATIVE_DRAG_ENTER, acceptDrop);
 				this.addEventListener(NativeDragEvent.NATIVE_DRAG_DROP, handleDrop);
 				
@@ -105,7 +110,7 @@
 			
 			private function playSWF():void						{ swfcontroller.play(); }
 			private function pauseSWF():void					{ swfcontroller.stop(); }
-			private function seekbarChange(e:Event):void		{ swfcontroller.addEventListener(Event.FRAME_CONSTRUCTED, swfLoadCompleteHandler ); swfcontroller.gotoAndStop(seekbar.value); }
+			private function seekbarChange(e:Event):void		{ swfcontroller.addEventListener(Event.FRAME_CONSTRUCTED, swfLoadCompleteHandler); swfcontroller.gotoAndStop(seekbar.value); }
 			private function updateCapturedImage():void			{ capturedImage.source = RenderDialogue.captureSWFFrame(loadedSWF, capturedImage.width, capturedImage.height); }
 			private function seekbarTipFormat(i:Number):String	{ return i.toString(10); }
 			
@@ -123,8 +128,15 @@
 					renderselected.enabled = true;
 				}
 			}
-			private function handleListSelectItem(e:MouseEvent):void {
+			private function listChangeEventHandler(e:CollectionEvent):void {
 				// Only allow a SWF file to remain loaded if only one is selected
+				switch(e.kind) {
+					case CollectionEventKind.REMOVE:
+						beginUnloadingSWF();
+						break;
+				}
+			}
+			private function listCommonEventHandler(e:Event):void {
 				if (filequeue.selectedItems.length == 1) {
 					beginLoadingSWF(filequeue.selectedItem as String);
 				} else {
@@ -146,6 +158,7 @@
 			}
 			private function beginUnloadingSWF():void {
 				loadedSWF.unloadAndStop(true);
+				loadedSWF.source = null;
 				capturedImage.unloadAndStop(true);
 				seekbar.enabled = false;
 				seekbar.removeEventListener(Event.CHANGE, seekbarChange);
@@ -285,11 +298,10 @@
 			
 			private function globalKeyPressed(e:KeyboardEvent):void {
 				if (e.keyCode == Keyboard.A && e.controlKey == true) {
-					trace("Ctrl-A pressed!");
 					filequeue.selectedItems = (filequeue.dataProvider as ArrayCollection).source;
 				}
 				if (e.keyCode == Keyboard.DELETE || e.keyCode == Keyboard.BACKSPACE) {
-					if (filequeue.selectedItems.length >= 0) {
+					if (filequeue.selectedItems != null && filequeue.selectedItems.length >= 0) {
 						Alert.show("Are you sure you want to remove the selected files from the queue?", "", Alert.YES | Alert.NO, this, deleteFileQueueHandler, null, Alert.NO);
 					}
 				}
