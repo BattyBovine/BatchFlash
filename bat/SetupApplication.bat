@@ -8,7 +8,7 @@
 
 :: Your certificate information
 set CERT_NAME="BatchFlash"
-set CERT_PASS=
+set CERT_PASS=D6XLKaHQaQNxjDfZwqJXMWq5avpapSrQH0G6tnEOecNYIaRqFcuMeRTJsiztXFGWjQpdzARWRHJ4yvk5fyt4nzdBIZk91TNvDTBGRpzZcZbAqtQBD7oCht2gfMTHBUbO
 set CERT_FILE="bat\BatchFlash.p12"
 set SIGNING_OPTIONS=-storetype pkcs12 -keystore %CERT_FILE% -storepass %CERT_PASS%
 

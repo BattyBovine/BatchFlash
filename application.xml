@@ -36,6 +36,7 @@
     <!--<systemChrome>standard</systemChrome>-->
     <width>668</width>
     <height>600</height>
+    <systemChrome>standard</systemChrome>
   </initialWindow>
   <!--
 	More options:
