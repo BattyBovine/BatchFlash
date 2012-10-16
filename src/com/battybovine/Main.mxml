@@ -57,6 +57,7 @@
 			import mx.events.CollectionEventKind;
 			import mx.events.MenuEvent;
 			import mx.managers.PopUpManager;
+			import flash.desktop.NativeApplication;
 			import flash.desktop.NativeDragManager;
 			import flash.events.KeyboardEvent;
 			import flash.events.NativeDragEvent;
@@ -72,20 +73,49 @@
 			
 			
 			private function init():void {
+				// Check for changes to the data in the file queue list
 				filequeuedata.addEventListener(CollectionEvent.COLLECTION_CHANGE, listChangeEventHandler);
 				
+				// Set the data provider for the file queue, and add change event listener
 				filequeue.dataProvider = filequeuedata;
-				//filequeue.addEventListener(MouseEvent.CLICK, listChangeEventHandler);
 				filequeue.addEventListener(Event.CHANGE, listCommonEventHandler);
-				this.addEventListener(NativeDragEvent.NATIVE_DRAG_ENTER, acceptDrop);
-				this.addEventListener(NativeDragEvent.NATIVE_DRAG_DROP, handleDrop);
 				
+				// Add listeners for the application itself, to allow dropping files into the window and interacting with the file list
+				FlexGlobals.topLevelApplication.addEventListener(NativeDragEvent.NATIVE_DRAG_ENTER, acceptDrop);
+				FlexGlobals.topLevelApplication.addEventListener(NativeDragEvent.NATIVE_DRAG_DROP, handleDrop);
 				FlexGlobals.topLevelApplication.addEventListener(KeyboardEvent.KEY_UP, globalKeyPressed);
 			}
+			// Listen for changes to the file list
+			private function listChangeEventHandler(e:CollectionEvent):void {
+				switch(e.kind) {
+					case CollectionEventKind.REMOVE:
+						// Disable the Render Selected button, since the selection is now deleted
+						renderselected.enabled = false;
+						// Unload any SWF that may be loaded into the preview window
+						beginUnloadingSWF();
+						break;
+				}
+				
+				// Enable and disable the Render All button depending on the new contents of the list
+				renderall.enabled = (filequeuedata.length > 0);
+			}
+			// Listen for user interaction with the file list
+			private function listCommonEventHandler(e:Event):void {
+				// Only allow a SWF file to remain loaded if only one is selected
+				if (filequeue.selectedItems.length == 1) {
+					beginLoadingSWF(filequeue.selectedItem as String);
+					renderselected.enabled = true;
+				} else {
+					beginUnloadingSWF();
+					renderselected.enabled = false;
+				}
+			}
 			
+			// Accept file drops onto the main application window
 			private function acceptDrop(e:Event):void {
 				NativeDragManager.acceptDragDrop(this);
 			}
+			// Handle SWF file drops
 			private function handleDrop(e:NativeDragEvent):void {
 				var droppedfiles:Array = e.clipboard.getData(ClipboardFormats.FILE_LIST_FORMAT) as Array;
 				for each (var file:File in droppedfiles) {
@@ -98,6 +128,7 @@
 				}
 			}
 			
+			// Show a dialogue for opening SWF files
 			private function showOpenSwfDialogue():void {
 				var swfFilter:FileFilter = new FileFilter("SWF File (*.swf)", "*.swf");
 				var swffile:File = new File();
@@ -108,64 +139,42 @@
 				handleOpenedSWFFile(e.currentTarget as File);
 			}
 			
-			private function playSWF():void						{ swfcontroller.play(); }
-			private function pauseSWF():void					{ swfcontroller.stop(); }
-			private function seekbarChange(e:Event):void		{ swfcontroller.addEventListener(Event.FRAME_CONSTRUCTED, swfLoadCompleteHandler); swfcontroller.gotoAndStop(seekbar.value); }
-			private function updateCapturedImage():void			{ capturedImage.source = RenderDialogue.captureSWFFrame(loadedSWF, capturedImage.width, capturedImage.height); }
+			//private function playSWF():void						{ swfcontroller.play(); }
+			//private function pauseSWF():void					{ swfcontroller.stop(); }
+			private function updatePreviewImage():void			{ previewImage.source = RenderDialogue.captureSWFFrame(loadedSWF, previewImage.width, previewImage.height); }
 			private function seekbarTipFormat(i:Number):String	{ return i.toString(10); }
 			
+			// Add the file to the list when it's opened, whether via the dialogue or from being dropped into the window
 			private function handleOpenedSWFFile(file:File):void {
-				//var loader:Loader = new Loader();
-				//loader.contentLoaderInfo.addEventListener(Event.COMPLETE, loadSWF);
-				//var fLoader:ForcibleLoader = new ForcibleLoader(loader);
-				//fLoader.load(new URLRequest(file.nativePath));
-				
 				if(!filequeuedata.contains(file.nativePath)) {
 					filequeuedata.addItem(file.nativePath);
 				}
-				if(filequeuedata.length >= 0) {
-					renderall.enabled = true;
-					renderselected.enabled = true;
-				}
-			}
-			private function listChangeEventHandler(e:CollectionEvent):void {
-				// Only allow a SWF file to remain loaded if only one is selected
-				switch(e.kind) {
-					case CollectionEventKind.REMOVE:
-						beginUnloadingSWF();
-						break;
-				}
-			}
-			private function listCommonEventHandler(e:Event):void {
-				if (filequeue.selectedItems.length == 1) {
-					beginLoadingSWF(filequeue.selectedItem as String);
-				} else {
-					beginUnloadingSWF();
-				}
-				
-				if (filequeue.selectedItems.length <= 0) {
-					renderselected.enabled = false;
-				}
 			}
 			
+			// Start loading the SWF file
 			private function beginLoadingSWF(filepath:String):void {
+				// Create a new loader and listen for loading to be complete
 				var loader:Loader = new Loader();
 				loader.contentLoaderInfo.addEventListener(Event.COMPLETE, loadSWF);
+				// Load via a ForcibleLoader to add basic compatibility with AVM1 SWF files
 				var fLoader:ForcibleLoader = new ForcibleLoader(loader);
 				fLoader.load(new URLRequest(filepath));
-				seekbar.addEventListener(Event.CHANGE, seekbarChange);
+				// Enable scrubbing through the SWF file
 				seekbar.enabled = true;
 			}
+			// Start unloading the SWF file
 			private function beginUnloadingSWF():void {
+				// Unload the SWF and the preview image
 				loadedSWF.unloadAndStop(true);
-				loadedSWF.source = null;
-				capturedImage.unloadAndStop(true);
+				previewImage.unloadAndStop(true);
+				// Disable and reset the seekbar
 				seekbar.enabled = false;
-				seekbar.removeEventListener(Event.CHANGE, seekbarChange);
+				seekbar.removeEventListener(Event.CHANGE, seekbarChangeHandler);
 				seekbar.maximum = 1;
 			}
 			
 			private function loadSWF(e:Event):void {
+				// Set the container to the same dimensions as the loaded SWF, and set its source to the content
 				loadedSWF.width = e.currentTarget.width;
 				loadedSWF.height = e.currentTarget.height;
 				loadedSWF.source = e.currentTarget.content;
@@ -174,47 +183,51 @@
 				//trace("Loaded SWF source size:    " + loadedSWF.source.width + ", " + loadedSWF.source.height);
 				//trace("Loaded SWF source scale:   " + loadedSWF.source.scaleX + ", " + loadedSWF.source.scaleY);
 				
+				// Configure a controller to listen for FRAME_CONSTRUCTED events to allow us to generate preview images at will
 				swfcontroller = e.currentTarget.content as MovieClip;
 				swfcontroller.addEventListener(Event.FRAME_CONSTRUCTED, swfLoadCompleteHandler );
 				swfcontroller.gotoAndStop(1);
 				
+				// Initialise the seekbar and listen for user interaction
 				seekbar.maximum = swfcontroller.totalFrames;
 				seekbar.value = 1;
+				seekbar.addEventListener(Event.CHANGE, seekbarChangeHandler);
 			}
+			// Listen for when the SWF file is fully loaded
 			private function swfLoadCompleteHandler(e:Event):void {
+				// Finish listening to FRAME_CONSTRUCTED events, to avoid generating previews repeatedly
 				swfcontroller.removeEventListener(Event.FRAME_CONSTRUCTED, swfLoadCompleteHandler );
 				swfcontroller.soundTransform = new SoundTransform(0, 0);
 				renderselected.enabled = true;
-				updateCapturedImage();
+				updatePreviewImage();
+			}
+			private function seekbarChangeHandler(e:Event):void {
+				// Start listening for FRAME_CONSTRUCTED events again when the user wants to scrub through the SWF
+				swfcontroller.addEventListener(Event.FRAME_CONSTRUCTED, swfLoadCompleteHandler);
+				// Then go to the appropriate frame
+				swfcontroller.gotoAndStop(seekbar.value);
 			}
 			
+			// When the Render All button is clicked, prepare all items for output
 			private function renderAllClicked():void {
 				prepareItemsForOutput(true);
 			}
+			// When the Render Selected button is clicked, prepare the selected items for output
 			private function renderSelectedClicked():void {
 				prepareItemsForOutput(false);
 			}
-			//private function prepareAllForOutput(e:Event):void {
-				//for(var i:int; i<filequeue.numChildren; i++ ) {
-					//trace("Current item: " + filequeue.getChildAt(i));
-					//prepareItemForOutput(filequeue.getChildAt(i).toString(), e.currentTarget);
-				//}
-			//}
-			//private function prepareSelectedForOutput(e:Event):void {
-				//for(var item:String in filequeue.selectedItems) {
-					//trace("Current item: " + item);
-					//prepareItemForOutput(item, e.currentTarget);
-				//}
-			//}
-			private function prepareItemsForOutput(all:Boolean=true):Boolean {
+			private function prepareItemsForOutput(all:Boolean = true):Boolean {
+				// Load the preferences, and fail if they can't be read
 				prefsman.load();
 				if (!prefsman.preferencesLoaded()) {
 					trace("Preferences could not be loaded; not rendering a damn thing.");
 					return false;
 				}
 				
+				// Initialise the Render dialogue and display it
 				showRenderDialogue();
 				
+				// Find which array to load into the render dialogue depending on the button that was clicked
 				if (all) {
 					renderdialogue.loadFiles(filequeuedata.toArray());
 				} else {
@@ -226,15 +239,18 @@
 			
 			
 			
+			// Display the Preferences window
 			private function showPreferencesDialogue():void {
 				var prefswindow:IFlexDisplayObject = PopUpManager.createPopUp(this, com.battybovine.PreferencesWindow, true);
 				PopUpManager.centerPopUp(prefswindow);
 			}
 			
+			// Show a placeholder About... dialogue for now
 			private function showAboutDialogue():void {
 				Alert.show("Show About dialogue here...", "About BatchFlash", Alert.OK, this, null, null, Alert.OK);
 			}
 			
+			// Dispatch an EXITING event on quit to allow us to confirm exiting later if necessary
 			private function quitApplication():void {
 				var exitingEvent:Event = new Event(Event.EXITING, false, true);
 				NativeApplication.nativeApplication.dispatchEvent(exitingEvent);
@@ -243,6 +259,7 @@
 				}
 			}
 			
+			// Initialise and display the Render dialogue
 			private function showRenderDialogue():void {
 				renderdialogue = PopUpManager.createPopUp(this, RenderDialogue, true) as RenderDialogue;
 				PopUpManager.centerPopUp(renderdialogue);
@@ -250,6 +267,7 @@
 			
 			
 			/*
+			// Handle key equivalents for the native menu bar
 			private function keyEquivalentModifiers(item:Object):Array {
 				var result:Array = new Array();
 				
@@ -287,6 +305,7 @@
 				
 				return result;
 			}
+			// Handle menu events for the native menu
 			protected function menuItemEventHandler(e:FlexNativeMenuEvent):void {
 				trace("Menu item:", e.label);
 				if(e.label.match(/^open\sswf/i)) { showOpenSwfDialogue(); }			// Open SWF File...
@@ -296,16 +315,19 @@
 			}
 			*/
 			
+			// Listen for key presses globally to allow selecting all items and deleting selected items using the keyboard
 			private function globalKeyPressed(e:KeyboardEvent):void {
 				if (e.keyCode == Keyboard.A && e.controlKey == true) {
 					filequeue.selectedItems = (filequeue.dataProvider as ArrayCollection).source;
 				}
 				if (e.keyCode == Keyboard.DELETE || e.keyCode == Keyboard.BACKSPACE) {
 					if (filequeue.selectedItems != null && filequeue.selectedItems.length >= 0) {
-						Alert.show("Are you sure you want to remove the selected files from the queue?", "", Alert.YES | Alert.NO, this, deleteFileQueueHandler, null, Alert.NO);
+						Alert.show("Are you sure you want to remove the selected files from the queue? This will not delete the actual files.", "",
+						Alert.YES | Alert.NO, this, deleteFileQueueHandler, null, Alert.NO);
 					}
 				}
 			}
+			// Listen for confirmation that the user wants to delete the selected files
 			private function deleteFileQueueHandler(e:CloseEvent):void {
 				if (e.detail == Alert.YES) {
 					for each(var item:Object in filequeue.selectedItems) {
@@ -314,6 +336,7 @@
 				}
 			}
 			
+			// Listen for click events in the Flex menu bar
 			protected function menuItemClickHandler(e:MenuEvent):void {
 				trace("Menu item:", e.label);
 				if(e.label.match(/^open\sswf/i)) { showOpenSwfDialogue(); }			// Open SWF File...
@@ -321,6 +344,7 @@
 				if(e.label.match(/^quit/i)) { quitApplication(); }					// Quit
 				if(e.label.match(/^about(\s.*)?\.\.\./i)) { showAboutDialogue(); }	// About...
 			}
+			// Listen for keyboard shortcuts 
 			protected function menuItemKeyHandler(e:KeyboardEvent):void {
 				return;
 				//trace("Menu item:", e.label);
@@ -331,6 +355,8 @@
 			}
 			
 			
+			
+			// For now, just indicate we're shutting down
 			private function closeEvent():void {
 				trace("Shutting down...");
 			}
@@ -360,7 +386,7 @@
 	</mx:MenuBar>
 	
 	<mx:VBox id="container" width="100%" height="100%" horizontalAlign="center" paddingTop="{mainmenu.height+10}" paddingBottom="10" paddingLeft="10" paddingRight="10">
-		<mx:Image id="capturedImage" width="640" height="360" maxWidth="640" maxHeight="360" horizontalAlign="center" verticalAlign="middle" />
+		<mx:Image id="previewImage" width="640" height="360" maxWidth="640" maxHeight="360" horizontalAlign="center" verticalAlign="middle" />
 		<mx:HSlider id="seekbar" width="100%" minimum="1" maximum="1" value="1" snapInterval="1" dataTipPrecision="0" dataTipFormatFunction="seekbarTipFormat" liveDragging="true" enabled="false" />
 		<mx:List id="filequeue" width="100%" height="100%" allowMultipleSelection="true" verticalScrollPolicy="on" showDataTips="true" />
 		<mx:HBox width="100%" horizontalAlign="right">
