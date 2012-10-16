@@ -105,7 +105,7 @@
 			
 			private function playSWF():void						{ swfcontroller.play(); }
 			private function pauseSWF():void					{ swfcontroller.stop(); }
-			private function seekbarChange(e:Event):void		{ swfcontroller.addEventListener(Event.ENTER_FRAME, swfLoadCompleteHandler ); swfcontroller.gotoAndStop(seekbar.value); }
+			private function seekbarChange(e:Event):void		{ swfcontroller.addEventListener(Event.FRAME_CONSTRUCTED, swfLoadCompleteHandler ); swfcontroller.gotoAndStop(seekbar.value); }
 			private function updateCapturedImage():void			{ capturedImage.source = RenderDialogue.captureSWFFrame(loadedSWF, capturedImage.width, capturedImage.height); }
 			private function seekbarTipFormat(i:Number):String	{ return i.toString(10); }
 			
@@ -162,14 +162,14 @@
 				//trace("Loaded SWF source scale:   " + loadedSWF.source.scaleX + ", " + loadedSWF.source.scaleY);
 				
 				swfcontroller = e.currentTarget.content as MovieClip;
-				swfcontroller.addEventListener(Event.ENTER_FRAME, swfLoadCompleteHandler );
+				swfcontroller.addEventListener(Event.FRAME_CONSTRUCTED, swfLoadCompleteHandler );
 				swfcontroller.gotoAndStop(1);
 				
 				seekbar.maximum = swfcontroller.totalFrames;
 				seekbar.value = 1;
 			}
 			private function swfLoadCompleteHandler(e:Event):void {
-				swfcontroller.removeEventListener(Event.ENTER_FRAME, swfLoadCompleteHandler );
+				swfcontroller.removeEventListener(Event.FRAME_CONSTRUCTED, swfLoadCompleteHandler );
 				swfcontroller.soundTransform = new SoundTransform(0, 0);
 				renderselected.enabled = true;
 				updateCapturedImage();
