@@ -1,0 +1,362 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!--[CDATA[
+ * Copyright (c) 2012 Jamie Greunbaum
+ * 
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ * 
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ * 
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+]]>-->
+<s:WindowedApplication
+			xmlns:fx="http://ns.adobe.com/mxml/2009"
+			xmlns:s="library://ns.adobe.com/flex/spark"
+			xmlns:mx="library://ns.adobe.com/flex/mx"
+			showStatusBar="false"
+			creationComplete="init()"
+			close="closeEvent()">
+	
+	<fx:Script>
+		<![CDATA[
+			import com.battybovine.RenderDialogue;
+			
+			import flash.display.Bitmap;
+			import flash.display.BitmapData;
+			import flash.display.DisplayObject;
+			import flash.display.IBitmapDrawable;
+			import flash.events.Event;
+			import flash.events.MouseEvent;
+			import flash.filesystem.File;
+			import flash.filesystem.FileStream;
+			import flash.geom.Matrix;
+			import flash.geom.Point;
+			import flash.geom.Rectangle;
+			import flash.media.SoundTransform;
+			import flash.ui.Keyboard;
+			import flash.utils.ByteArray;
+			import mx.controls.Alert;
+			import mx.controls.Image;
+			import mx.core.FlexGlobals;
+			import mx.core.IFlexDisplayObject;
+			import mx.core.WindowedApplication;
+			import mx.collections.ArrayCollection;
+			import mx.events.CloseEvent;
+			import mx.events.MenuEvent;
+			import mx.managers.PopUpManager;
+			import flash.desktop.NativeDragManager;
+			import flash.events.KeyboardEvent;
+			import flash.events.NativeDragEvent;
+			
+			
+			
+			private var prefsman:PreferencesManager = new PreferencesManager();
+			private var renderdialogue:RenderDialogue;
+			
+			private var swfcontroller:MovieClip = new MovieClip();
+			private var filequeuedata:ArrayCollection = new ArrayCollection();
+			
+			
+			
+			private function init():void {
+				filequeue.dataProvider = filequeuedata;
+				filequeue.addEventListener(MouseEvent.CLICK, handleListSelectItem);
+				this.addEventListener(NativeDragEvent.NATIVE_DRAG_ENTER, acceptDrop);
+				this.addEventListener(NativeDragEvent.NATIVE_DRAG_DROP, handleDrop);
+				
+				FlexGlobals.topLevelApplication.addEventListener(KeyboardEvent.KEY_UP, globalKeyPressed);
+			}
+			
+			private function acceptDrop(e:Event):void {
+				NativeDragManager.acceptDragDrop(this);
+			}
+			private function handleDrop(e:NativeDragEvent):void {
+				var droppedfiles:Array = e.clipboard.getData(ClipboardFormats.FILE_LIST_FORMAT) as Array;
+				for each (var file:File in droppedfiles) {
+					switch(file.extension) {
+						case "swf":
+							handleOpenedSWFFile(file);
+						default:
+							break;
+					}
+				}
+			}
+			
+			private function showOpenSwfDialogue():void {
+				var swfFilter:FileFilter = new FileFilter("SWF File (*.swf)", "*.swf");
+				var swffile:File = new File();
+				swffile.browseForOpen("Locate SWF file", [swfFilter]);
+				swffile.addEventListener(Event.SELECT, swfSelectedFromDialogue);
+			}
+			private function swfSelectedFromDialogue(e:Event):void {
+				handleOpenedSWFFile(e.currentTarget as File);
+			}
+			
+			private function playSWF():void						{ swfcontroller.play(); }
+			private function pauseSWF():void					{ swfcontroller.stop(); }
+			private function seekbarChange(e:Event):void		{ swfcontroller.addEventListener(Event.ENTER_FRAME, swfLoadCompleteHandler ); swfcontroller.gotoAndStop(seekbar.value); }
+			private function updateCapturedImage():void			{ capturedImage.source = RenderDialogue.captureSWFFrame(loadedSWF, capturedImage.width, capturedImage.height); }
+			private function seekbarTipFormat(i:Number):String	{ return i.toString(10); }
+			
+			private function handleOpenedSWFFile(file:File):void {
+				//var loader:Loader = new Loader();
+				//loader.contentLoaderInfo.addEventListener(Event.COMPLETE, loadSWF);
+				//var fLoader:ForcibleLoader = new ForcibleLoader(loader);
+				//fLoader.load(new URLRequest(file.nativePath));
+				
+				if(!filequeuedata.contains(file.nativePath)) {
+					filequeuedata.addItem(file.nativePath);
+				}
+				if(filequeuedata.length >= 0) {
+					renderall.enabled = true;
+					renderselected.enabled = true;
+				}
+			}
+			private function handleListSelectItem(e:MouseEvent):void {
+				// Only allow a SWF file to remain loaded if only one is selected
+				if (filequeue.selectedItems.length == 1) {
+					beginLoadingSWF(filequeue.selectedItem as String);
+				} else {
+					beginUnloadingSWF();
+				}
+				
+				if (filequeue.selectedItems.length <= 0) {
+					renderselected.enabled = false;
+				}
+			}
+			
+			private function beginLoadingSWF(filepath:String):void {
+				var loader:Loader = new Loader();
+				loader.contentLoaderInfo.addEventListener(Event.COMPLETE, loadSWF);
+				var fLoader:ForcibleLoader = new ForcibleLoader(loader);
+				fLoader.load(new URLRequest(filepath));
+				seekbar.addEventListener(Event.CHANGE, seekbarChange);
+				seekbar.enabled = true;
+			}
+			private function beginUnloadingSWF():void {
+				loadedSWF.unloadAndStop(true);
+				capturedImage.unloadAndStop(true);
+				seekbar.enabled = false;
+				seekbar.removeEventListener(Event.CHANGE, seekbarChange);
+				seekbar.maximum = 1;
+			}
+			
+			private function loadSWF(e:Event):void {
+				loadedSWF.width = e.currentTarget.width;
+				loadedSWF.height = e.currentTarget.height;
+				loadedSWF.source = e.currentTarget.content;
+				
+				//trace("Loaded SWF container size: " + loadedSWF.width + ", " + loadedSWF.height);
+				//trace("Loaded SWF source size:    " + loadedSWF.source.width + ", " + loadedSWF.source.height);
+				//trace("Loaded SWF source scale:   " + loadedSWF.source.scaleX + ", " + loadedSWF.source.scaleY);
+				
+				swfcontroller = e.currentTarget.content as MovieClip;
+				swfcontroller.addEventListener(Event.ENTER_FRAME, swfLoadCompleteHandler );
+				
+				seekbar.maximum = swfcontroller.totalFrames;
+				seekbar.value = 1;
+			}
+			private function swfLoadCompleteHandler(e:Event):void {
+				swfcontroller.removeEventListener(Event.ENTER_FRAME, swfLoadCompleteHandler );
+				swfcontroller.soundTransform = new SoundTransform(0, 0);
+				renderselected.enabled = true;
+				updateCapturedImage();
+			}
+			
+			private function renderAllClicked():void {
+				prepareItemsForOutput(true);
+			}
+			private function renderSelectedClicked():void {
+				prepareItemsForOutput(false);
+			}
+			//private function prepareAllForOutput(e:Event):void {
+				//for(var i:int; i<filequeue.numChildren; i++ ) {
+					//trace("Current item: " + filequeue.getChildAt(i));
+					//prepareItemForOutput(filequeue.getChildAt(i).toString(), e.currentTarget);
+				//}
+			//}
+			//private function prepareSelectedForOutput(e:Event):void {
+				//for(var item:String in filequeue.selectedItems) {
+					//trace("Current item: " + item);
+					//prepareItemForOutput(item, e.currentTarget);
+				//}
+			//}
+			private function prepareItemsForOutput(all:Boolean=true):Boolean {
+				prefsman.load();
+				if (!prefsman.preferencesLoaded()) {
+					trace("Preferences could not be loaded; not rendering a damn thing.");
+					return false;
+				}
+				
+				showRenderDialogue();
+				
+				if (all) {
+					renderdialogue.loadFiles(filequeuedata.toArray());
+				} else {
+					renderdialogue.loadFiles(filequeue.selectedItems);
+				}
+				
+				return true;
+			}
+			
+			
+			
+			private function showPreferencesDialogue():void {
+				var prefswindow:IFlexDisplayObject = PopUpManager.createPopUp(this, com.battybovine.PreferencesWindow, true);
+				PopUpManager.centerPopUp(prefswindow);
+			}
+			
+			private function showAboutDialogue():void {
+				Alert.show("Show About dialogue here...", "About BatchFlash", Alert.OK, this, null, null, Alert.OK);
+			}
+			
+			private function quitApplication():void {
+				var exitingEvent:Event = new Event(Event.EXITING, false, true);
+				NativeApplication.nativeApplication.dispatchEvent(exitingEvent);
+				if (!exitingEvent.isDefaultPrevented()) {
+					NativeApplication.nativeApplication.exit();
+				}
+			}
+			
+			private function showRenderDialogue():void {
+				renderdialogue = PopUpManager.createPopUp(this, RenderDialogue, true) as RenderDialogue;
+				PopUpManager.centerPopUp(renderdialogue);
+			}
+			
+			
+			/*
+			private function keyEquivalentModifiers(item:Object):Array {
+				var result:Array = new Array();
+				
+				var keyEquivField:String = mainmenu.keyEquivalentField;
+				var altKeyField:String;
+				var controlKeyField:String;
+				var shiftKeyField:String;
+				if (item is XML) {
+					altKeyField = "@altKey";
+					controlKeyField = "@controlKey";
+					shiftKeyField = "@shiftKey";
+				} else if (item is Object) {
+					altKeyField = "altKey";
+					controlKeyField = "controlKey";
+					shiftKeyField = "shiftKey";
+				}
+				
+				if (item[keyEquivField] == null || item[keyEquivField].length == 0) { return result; }
+				
+				if (item[altKeyField] != null && item[altKeyField] == true) {
+					if ((Capabilities.os.indexOf("Windows") >= 0)) {
+						result.push(Keyboard.ALTERNATE);
+					}
+				}
+				if (item[controlKeyField] != null && item[controlKeyField] == true) {
+					if (Capabilities.os.indexOf("Windows") >= 0) {
+						result.push(Keyboard.CONTROL);
+					} else if (Capabilities.os.indexOf("Mac OS") >= 0) {
+						result.push(Keyboard.COMMAND);
+					}
+				}
+				if (item[shiftKeyField] != null && item[shiftKeyField] == true) {
+					result.push(Keyboard.SHIFT);
+				}
+				
+				return result;
+			}
+			protected function menuItemEventHandler(e:FlexNativeMenuEvent):void {
+				trace("Menu item:", e.label);
+				if(e.label.match(/^open\sswf/i)) { showOpenSwfDialogue(); }			// Open SWF File...
+				if(e.label.match(/^preferences/i)) { showPreferencesDialogue(); }	// Preferences
+				if(e.label.match(/^quit/i)) { quitApplication(); }					// Quit
+				if(e.label.match(/^about(\s.*)?\.\.\./i)) { showAboutDialogue(); }	// About...
+			}
+			*/
+			
+			private function globalKeyPressed(e:KeyboardEvent):void {
+				if (e.keyCode == Keyboard.A && e.controlKey == true) {
+					trace("Ctrl-A pressed!");
+					filequeue.selectedItems = (filequeue.dataProvider as ArrayCollection).source;
+				}
+				if (e.keyCode == Keyboard.DELETE || e.keyCode == Keyboard.BACKSPACE) {
+					if (filequeue.selectedItems.length >= 0) {
+						Alert.show("Are you sure you want to remove the selected files from the queue?", "", Alert.YES | Alert.NO, this, deleteFileQueueHandler, null, Alert.NO);
+					}
+				}
+			}
+			private function deleteFileQueueHandler(e:CloseEvent):void {
+				if (e.detail == Alert.YES) {
+					for each(var item:Object in filequeue.selectedItems) {
+						filequeuedata.removeItemAt(filequeuedata.getItemIndex(item.toString()));
+					}
+				}
+			}
+			
+			protected function menuItemClickHandler(e:MenuEvent):void {
+				trace("Menu item:", e.label);
+				if(e.label.match(/^open\sswf/i)) { showOpenSwfDialogue(); }			// Open SWF File...
+				if(e.label.match(/^preferences/i)) { showPreferencesDialogue(); }	// Preferences
+				if(e.label.match(/^quit/i)) { quitApplication(); }					// Quit
+				if(e.label.match(/^about(\s.*)?\.\.\./i)) { showAboutDialogue(); }	// About...
+			}
+			protected function menuItemKeyHandler(e:KeyboardEvent):void {
+				return;
+				//trace("Menu item:", e.label);
+				//if(e.label.match(/^open\sswf/i)) { showOpenSwfDialogue(); }			// Open SWF File...
+				//if(e.label.match(/^preferences/i)) { showPreferencesDialogue(); }	// Preferences
+				//if(e.label.match(/^quit/i)) { quitApplication(); }					// Quit
+				//if(e.label.match(/^about(\s.*)?\.\.\./i)) { showAboutDialogue(); }	// About...
+			}
+			
+			
+			private function closeEvent():void {
+				trace("Shutting down...");
+			}
+		]]>
+	</fx:Script>
+	
+	<!--<s:menu>
+		<mx:FlexNativeMenu id="mainmenu" labelField="@label" keyEquivalentField="@keyEquivalent" keyEquivalentModifiersFunction="keyEquivalentModifiers" dataProvider="{mainmenudata}" showRoot="false" itemClick="menuItemEventHandler(event)" />
+	</s:menu>
+	<fx:Declarations>
+	</fx:Declarations>-->
+	
+	<mx:MenuBar id="mainmenu" top="0" right="0" left="0" labelField="@label" showRoot="false" itemClick="menuItemClickHandler(event)" keyDown="menuItemKeyHandler(event)">
+		<fx:XMLList id="mainmenudata">
+			<mainmenu>
+				<menuitem label="File">
+					<menuitem id="mainmenuopen" label="Open SWF File..." keyEquivalent="o" controlKey="true" />
+					<menuitem id="mainmenupreferences" label="Preferences" keyEquivalent="p" controlKey="true" />
+					<menuitem type="separator" />
+					<menuitem id="mainmenuquit" label="Quit" keyEquivalent="q" controlKey="true" />
+				</menuitem>
+				<menuitem label="Help">
+					<menuitem id="mainmenuabout" label="About BatchFlash..." keyEquivalent="?" controlKey="true" />
+				</menuitem>
+			</mainmenu>
+		</fx:XMLList>
+	</mx:MenuBar>
+	
+	<mx:VBox id="container" width="100%" height="100%" horizontalAlign="center" paddingTop="{mainmenu.height+10}" paddingBottom="10" paddingLeft="10" paddingRight="10">
+		<mx:Image id="capturedImage" width="640" height="360" maxWidth="640" maxHeight="360" horizontalAlign="center" verticalAlign="middle" />
+		<mx:HSlider id="seekbar" width="100%" minimum="1" maximum="1" value="1" snapInterval="1" dataTipPrecision="0" dataTipFormatFunction="seekbarTipFormat" liveDragging="true" enabled="false" />
+		<mx:List id="filequeue" width="100%" height="100%" allowMultipleSelection="true" verticalScrollPolicy="on" showDataTips="true" />
+		<mx:HBox width="100%" horizontalAlign="right">
+			<mx:Button id="renderpreferences" icon="@Embed(source='../../../res/gearicon.png')" width="28" click="showPreferencesDialogue()" enabled="true" />
+			<mx:Spacer width="100%" />
+			<mx:Button id="renderselected" label="Render Selected" click="renderSelectedClicked()" enabled="false" />
+			<mx:Button id="renderall" label="Render All" click="renderAllClicked()" enabled="false" />
+		</mx:HBox>
+	</mx:VBox>
+	<mx:Image id="loadedSWF" scaleContent="false" showBusyCursor="true" visible="false" includeInLayout="false" />
+	
+</s:WindowedApplication>

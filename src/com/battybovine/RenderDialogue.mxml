@@ -1,0 +1,321 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--[CDATA[
+ * Copyright (c) 2012 Jamie Greunbaum
+ * 
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ * 
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ * 
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+]]>-->
+<s:TitleWindow xmlns:fx="http://ns.adobe.com/mxml/2009" 
+               xmlns:s="library://ns.adobe.com/flex/spark" 
+               xmlns:mx="library://ns.adobe.com/flex/mx"
+			   creationComplete="openEvent()"
+			   close="closeEvent()">
+	
+	<fx:Script>
+		<![CDATA[
+			import com.battybovine.RenderDialogue.SwfData;
+			import flash.filesystem.File;
+			
+			import flash.display.Bitmap;
+			import flash.display.BitmapData;
+			import flash.display.Loader;
+			import flash.display.MovieClip;
+			import flash.events.Event;
+			import flash.media.SoundTransform;
+			import flash.net.URLRequest;
+			import flash.utils.Timer;
+			import flash.events.TimerEvent;
+			import mx.controls.Alert;
+			import mx.controls.SWFLoader;
+			import mx.graphics.codec.*;
+			import mx.managers.PopUpManager;
+			
+			
+			
+			private var prefsman:PreferencesManager = new PreferencesManager();
+			
+			private var waitForQueue:Timer = new Timer(10, 100);
+			private var tempfilequeue:Array;
+			private var tempdata:SwfData;
+			
+			private var filequeue:Array = new Array();
+			private var renderswf:MovieClip = new MovieClip();
+			private var renderswfframe:int = 0;
+			
+			
+			
+			private function openEvent():void {
+				waitForQueue.addEventListener(TimerEvent.TIMER, onTimerTick);
+				waitForQueue.addEventListener(TimerEvent.TIMER_COMPLETE, onTimerFinish);
+				waitForQueue.start();
+			}
+			private function onTimerTick(e:TimerEvent):void {
+				if (tempfilequeue != null) {
+					trace("File queue loaded; continuing...");
+					waitForQueue.stop();
+					startRender();
+				}
+			}
+			private function onTimerFinish(e:TimerEvent):void {
+				trace("Timer ran out; queue will probably never load. Just quit.");
+				Alert.show("There was an issue getting the list of files to render. Explaining would take too long, so just trust us that it isn't working for reasons unknown.",
+							"Error", Alert.OK, this, null, null, Alert.OK)
+				this.closeEvent();
+			}
+			
+			public function loadFiles(input:Array):void {
+				tempfilequeue = input;
+			}
+			
+			private function updateCapturedImage():void	{ previewImage.source = captureSWFFrame(loadedSWF, previewImage.width, previewImage.height); }
+			
+			public function startRender():void {
+				prefsman.load();
+				if (!prefsman.preferencesLoaded()) {
+					trace("Preferences could not be loaded; not rendering a damn thing.");
+					return;
+				}
+				
+				openSwfData();
+			}
+			private function openSwfData():void {
+				if (tempfilequeue.length > 0) {
+					// Open each file in the temporary queue to collect additional data
+					tempdata = new SwfData()
+					var loader:Loader = new Loader();
+					loader.contentLoaderInfo.addEventListener(Event.COMPLETE, loadSwfData);
+					var fLoader:ForcibleLoader = new ForcibleLoader(loader);
+					fLoader.load(new URLRequest(tempfilequeue[0]));
+					tempdata.file = tempfilequeue[0];
+				} else {
+					// Once the temporary queue is empty, begin the rendering process
+					renderFileQueue();
+				}
+			}
+			private function loadSwfData(e:Event):void {
+				// Load the movie clip and stop it from playing
+				var swf:MovieClip = e.currentTarget.content as MovieClip;
+				swf.stop();
+				swf.soundTransform = new SoundTransform(0,0);
+				
+				// Add some useful information to our container class
+				tempdata.numFrames = swf.totalFrames;
+				tempdata.numScenes = swf.scenes.length;
+				
+				trace(tempdata.file + " contains " + swf.totalFrames + " frames");
+				
+				// Push the data class into our permanent queue, and remove
+				// the recently processed file from the temporary queue
+				filequeue.push(new SwfData(tempdata));
+				tempfilequeue.shift();
+				tempdata.empty();
+				
+				// Then restart the process until the temp queue is empty
+				openSwfData();
+			}
+			
+			private function renderFileQueue():void {
+				var totalframes:int = 0;
+				for each(var data:SwfData in filequeue) {
+					totalframes += data.numFrames;
+				}
+				progressBarTotal.maximum = totalframes;
+				progressBarTotal.indeterminate = false;
+				trace("Progress bar set for " + progressBarTotal.maximum + " frames.");
+				progressBarTotal.setProgress(0, progressBarTotal.maximum);
+				
+				// Once the total progress bar is prepared, begin rendering the file queue
+				startNewRender();
+			}
+			private function startNewRender():void {
+				var loader:Loader = new Loader();
+				loader.contentLoaderInfo.addEventListener(Event.COMPLETE, renderSwfOpen);
+				var fLoader:ForcibleLoader = new ForcibleLoader(loader);
+				fLoader.load(new URLRequest(filequeue[0].file));
+			}
+			private function renderSwfOpen(e:Event):void {
+				loadedSWF.width = e.currentTarget.width;
+				loadedSWF.height = e.currentTarget.height;
+				loadedSWF.source = e.currentTarget.content;
+				
+				renderswf = e.currentTarget.content as MovieClip;
+				renderswf.soundTransform = new SoundTransform(0,0);
+				renderswf.addEventListener(Event.FRAME_CONSTRUCTED, frameEventListener);
+				renderswfframe = 1;
+				renderswf.gotoAndStop(renderswfframe);
+				
+				var nextfile:File = new File(filequeue[0].file); progressBarCurrent.label = nextfile.name + ": %3%%";
+				progressBarCurrent.maximum = filequeue[0].numFrames;
+				progressBarCurrent.indeterminate = false;
+				progressBarCurrent.setProgress(0, progressBarCurrent.maximum);
+			}
+			private function frameEventListener(e:Event):void { updateCapturedImage(); renderSwfLoop(); }
+			private function renderSwfLoop():void {
+				if(renderswfframe <= filequeue[0].numFrames) {
+					var renderfile:File = new File(filequeue[0].file);
+					var outdirfull:File = new File(prefsman.getOutputDirectory()+File.separator+renderfile.name.replace("."+renderfile.extension,""));
+					outdirfull.createDirectory();
+					
+					saveImageToDisk(captureSWFFrame(loadedSWF, prefsman.getOutputWidth(), prefsman.getOutputHeight(), prefsman.getAspect()), outdirfull.nativePath, renderfile.name.replace("." + renderfile.extension, ""), (prefsman.getOutputFormat() == 1)?"jpg":"png", prefsman.getOutputQuality());
+					
+					prepareNextFrame();
+				} else {
+					loadedSWF.unloadAndStop();
+					renderswf.removeEventListener(Event.FRAME_CONSTRUCTED, frameEventListener);
+					filequeue.shift();
+					if(filequeue.length>0) {
+						startNewRender();
+					} else {
+						this.closeEvent();
+					}
+				}
+			}
+			private function saveImageToDisk(bm:Bitmap, folder:String, filename:String = "out", ext:String = "png", jpegquality:int = 80):void {
+				// Find the number of digits in the frame count and pad the current frame to that length
+				var j:int = filequeue[0].numFrames;
+				for (var i:int = 1; j >= 10; i++ ) { j /= 10; }
+				var framepad:String = "" + renderswfframe;
+				while (framepad.length < i) { framepad = "0" + framepad; }
+				
+				// Save the image
+				var savename:String = filename + "." + framepad + "." + ext;
+				var out:File = new File(folder+File.separator+savename);
+				trace("Outputting " + bm.width + "×" + bm.height + " frame capture to " + folder+File.separator+savename + "...");
+				var fs:FileStream = new FileStream();
+				try {
+					fs.open(out, FileMode.WRITE);
+					var encoder:IImageEncoder = null;
+					switch(ext) {
+						case "png":
+							encoder = new PNGEncoder();
+							break;
+						case "jpg":
+						case "jpeg":
+							encoder = new JPEGEncoder(jpegquality);
+							break;
+						case "tga":
+							encoder = new TGAEncoder();
+							break;
+						default:
+							trace("Can't find an appropriate image encoder; defaulting to PNG");
+							encoder = new PNGEncoder();
+					}
+					fs.writeBytes(encoder.encode(bm.bitmapData));
+					fs.close();
+					trace(out.nativePath + " saved successfully!");
+				} catch (e:Error) {
+					trace(e.message);
+				}
+			}
+			private function prepareNextFrame():void {
+				progressBarCurrent.setProgress(renderswfframe, progressBarCurrent.maximum);
+				progressBarTotal.setProgress(progressBarTotal.value + 1, progressBarTotal.maximum);
+				renderswfframe++;
+				renderswf.gotoAndStop(renderswfframe);
+			}
+			
+			public static function captureSWFFrame(swf:SWFLoader, capturewidth:int, captureheight:int, aspect:String = ""):Bitmap {
+				var fitaspect:Boolean = true;
+				var aspectcrop:Boolean = false;
+				var noscale:Boolean = false;
+				switch(aspect.toLowerCase()) {
+					case "letterboxing":
+						fitaspect = false;
+						aspectcrop = false;
+						break;
+					case "cropping":
+						fitaspect = true;
+						aspectcrop = true;
+						break;
+					case "not changing the size":
+						fitaspect = false;
+						aspectcrop = false;
+						noscale = true;
+				}
+				
+				var scalex:Number = 1;
+				var scaley:Number = 1;
+				
+				if(!noscale) {
+					if(!fitaspect || aspectcrop) {
+						// Calculate the desired scale of our image based on the dimension that is proportionally larger than the desired output resolution
+						scalex = scaley = (((swf.height * capturewidth) / captureheight) >= swf.width)
+							? (capturewidth / swf.width)
+							: (captureheight / swf.height);
+					} else {
+						// Scale each side of the SWF to match the dimensions of our output image
+						scalex = capturewidth / swf.width;
+						scaley = captureheight / swf.height;
+					}
+				} else {
+					scalex = scaley = 1;
+				}
+				
+				// Create a new bitmap containing a scaled version of our SWF
+				var bd:BitmapData = new BitmapData(swf.width*scalex, swf.height*scaley, true);
+				var scalematrix:Matrix = new Matrix(scalex, 0, 0, scaley);
+				bd.draw(swf, scalematrix);
+				
+				var bm:Bitmap = null;
+				// Crop it down if we were asked to
+				if(fitaspect && aspectcrop) {
+					var crop:Rectangle = new Rectangle(((swf.width * scalex) - capturewidth) / 2, ((swf.height * scalex) - captureheight) / 2, capturewidth, captureheight);
+					var bdcrop:BitmapData = new BitmapData(crop.width, crop.height, true);
+					bdcrop.copyPixels(bd, crop, new Point(0, 0));
+					bm = new Bitmap(bdcrop);
+				} else {
+					bm = new Bitmap(bd);
+				}
+				
+				if (bm == null) {
+					trace("Bitmap is null somehow.");
+					return null;
+				}
+				
+				return bm;
+			}
+			
+			private function cancelCurrentClicked():void {
+				return;
+			}
+			
+			private function cancelAllClicked():void {
+				return;
+			}
+			
+			private function closeEvent():void {
+				trace("Closing Render Dialogue window");
+				
+				PopUpManager.removePopUp(this);
+			}
+		]]>
+	</fx:Script>
+	
+	<mx:VBox id="container" width="100%" height="100%" horizontalAlign="center" paddingTop="10" paddingBottom="10" paddingLeft="10" paddingRight="10">
+		<mx:Image id="previewImage" width="320" height="180" maxWidth="320" maxHeight="180" horizontalAlign="center" verticalAlign="middle" />
+		<mx:ProgressBar id="progressBarCurrent" mode="manual" indeterminate="true" labelPlacement="center" width="100%" height="100%" minimum="0" maximum="0" label="[Name of file]: %3%%" />
+		<mx:HRule />
+		<mx:ProgressBar id="progressBarTotal" mode="manual" indeterminate="true" labelPlacement="center" width="100%" height="100%" minimum="0" maximum="0" label="Total: %3%%" />
+		<mx:HBox width="100%" horizontalAlign="right">
+			<mx:Button id="cancelCurrent" label="Cancel Current" click="cancelCurrentClicked()" enabled="false" />
+			<mx:Button id="cancelAll" label="Cancel All" click="cancelAllClicked()" enabled="false" />
+		</mx:HBox>
+	</mx:VBox>
+	<mx:Image id="loadedSWF" scaleContent="false" showBusyCursor="true" visible="false" includeInLayout="false" />
+	
+</s:TitleWindow>

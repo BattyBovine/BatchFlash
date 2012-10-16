@@ -1,0 +1,53 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!--[CDATA[
+ * Copyright (c) 2012 Jamie Greunbaum
+ * 
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ * 
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ * 
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+]]>-->
+<application xmlns="http://ns.adobe.com/air/application/3.3">
+  <id>com.battybovine.BatchFlash</id>
+  <versionNumber>0.5.3</versionNumber>
+  <filename>BatchFlash</filename>
+  <name>BatchFlash</name>
+  <description>Automatically render multiple SWF video files to an image sequence in the given folder.</description>
+  <copyright>©2012 Batty Bovine Productions, LLC. All Rights Reserved.</copyright>
+  <initialWindow>
+    <title>BatchFlash</title>
+    <content>BatchFlash.swf</content>
+    <visible>true</visible>
+    <minimizable>true</minimizable>
+    <maximizable>true</maximizable>
+    <!--<systemChrome>standard</systemChrome>-->
+    <width>668</width>
+    <height>600</height>
+  </initialWindow>
+  <!--
+	More options:
+	http://livedocs.adobe.com/flex/3/html/File_formats_1.html#1043413
+	-->
+  <allowBrowserInvocation>false</allowBrowserInvocation>
+  <supportedProfiles>desktop extendedDesktop</supportedProfiles>
+  <icon>
+    <image16x16>icons/BatchFlash16.png</image16x16>
+    <image32x32>icons/BatchFlash32.png</image32x32>
+    <image48x48>icons/BatchFlash48.png</image48x48>
+    <image128x128>icons/BatchFlash128.png</image128x128>
+    <image512x512>icons/BatchFlash512.png</image512x512>
+  </icon>
+</application>

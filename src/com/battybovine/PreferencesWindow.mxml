@@ -1,0 +1,244 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--[CDATA[
+ * Copyright (c) 2012 Jamie Greunbaum
+ * 
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ * 
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ * 
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+]]>-->
+<s:TitleWindow xmlns:fx="http://ns.adobe.com/mxml/2009" 
+               xmlns:s="library://ns.adobe.com/flex/spark" 
+               xmlns:mx="library://ns.adobe.com/flex/mx"
+			   title="Preferences"
+			   creationComplete="openEvent()"
+			   close="closeEvent()">
+	
+	<fx:Script>
+		<![CDATA[
+			import adobe.utils.CustomActions;
+			import flash.data.EncryptedLocalStore;
+			import flash.events.Event;
+			import flash.utils.ByteArray;
+			import mx.collections.ArrayCollection;
+			import mx.controls.Alert;
+			import mx.events.CloseEvent;
+			import mx.events.ListEvent;
+			import mx.managers.PopUpManager;
+			
+			
+			
+			private var prefsman:PreferencesManager = null;
+			
+			
+			
+			private function openEvent():void {
+				prefsman = new PreferencesManager();
+				prefsman.addEventListener("prefsLoaded", loadPreferences);
+				if(prefsman!=null) prefsman.load();
+			}
+			
+			
+			
+			private function showOpenOutputDirectoryDialogue():void {
+				var outdir:File = File.userDirectory;
+				outdir.addEventListener(Event.SELECT, outputDirectorySelectedFromDialogue);
+				outdir.browseForDirectory("Select output folder");
+			}
+			private function outputDirectorySelectedFromDialogue(e:Event):void {
+				outputdirectory.text = e.currentTarget.nativePath;
+			}
+			
+			private function changeOutputDirectory(e:Event):void {
+				settingsChanged();
+			}
+			
+			private function changeOutputResolution(e:Event):void {
+				settingsChanged();
+			}
+			
+			private function changeOutputFormat(e:Event):void {
+				if (e.currentTarget.selectedLabel.match(/jpe?g/i)) {
+					outputqualitylabel.enabled = true;
+					outputquality.enabled = true;
+				} else {
+					outputqualitylabel.enabled = false;
+					outputquality.enabled = false;
+				}
+				settingsChanged();
+			}
+			
+			private function changeOutputQuality(e:Event):void {
+				settingsChanged();
+			}
+			
+			private function changeAspect(e:Event):void {
+				settingsChanged();
+			}
+			
+			
+			
+			private function loadPreferences(e:Event):Boolean {
+				outputdirectory.text = prefsman.getOutputDirectory();
+				outputresolution.text = prefsman.getOutputResolution();
+				outputformat.selectedIndex = prefsman.getOutputFormat();	outputformat.dispatchEvent(new ListEvent("change"));
+				outputquality.value = prefsman.getOutputQuality();
+				aspect.text = prefsman.getAspect();	aspect.dispatchEvent(new ListEvent("change"));
+			
+				if (!validatePreferences()) {
+					trace("Loaded preferences are invalid");
+					return false;
+				}
+				
+				return true;
+			}
+			
+			private function savePreferences():Boolean {
+				if (validatePreferences()) {
+					prefsman.setOutputDirectory(outputdirectory.text);
+					prefsman.setOutputResolution(outputresolution.text);
+					prefsman.setOutputFormat(outputformat.selectedIndex);
+					prefsman.setOutputQuality(outputquality.value);
+					prefsman.setAspect(aspect.selectedLabel);
+					prefsman.save();
+				} else {
+					trace("Preferences invalid; not saving");
+					return false;
+				}
+				prefsApply.enabled = false;
+				
+				return true;
+			}
+			
+			private function validatePreferences():Boolean {
+				trace("Validating preferences...");
+				
+				// *** Output resolution validation block ***
+				var outresvalid:Boolean = false;
+				var outrescmp:String = outputresolution.text.toLowerCase().replace(/^\s+/g, "").replace(/\s+$/g, "");
+				if (outrescmp.match(/\d+[x×]\d+/i)) {
+					outresvalid = true;
+				}
+				for each(var outresitem:Object in ArrayCollection(outputresolution.dataProvider)) {
+					var outresitemstring:String = outresitem.toString();
+					if (outresitemstring.toLowerCase() == outrescmp || outresitemstring.toLowerCase().indexOf(outrescmp)>=0) {
+						outputresolution.text = outresitemstring;
+						outputresolution.selectedItem = outresitem;
+						outresvalid = true;
+						break;
+					}
+				}
+				if (!outresvalid)	outputresolution.setStyle("borderColor", "red");
+				
+				// *** Aspect validation block ***
+				var aspectvalid:Boolean = false;
+				var aspectcmp:String = aspect.text.toLowerCase();
+				for each(var aspectitem:Object in ArrayCollection(aspect.dataProvider)) {
+					var aspectitemstring:String = aspectitem.toString();
+					if (aspectitemstring.toLowerCase() == aspectcmp || aspectitemstring.toLowerCase().indexOf(aspectcmp) >= 0) {
+						aspect.selectedItem = aspectitem;
+						aspectvalid = true;
+					}
+				}
+				
+				return (outresvalid);
+			}
+			
+			
+			
+			private function settingsChanged():void {
+				prefsApply.enabled = true;
+			}
+			
+			private function saveAndCloseEvent():void {
+				if(!saveEvent()) {
+					trace("Saving preferences failed");
+					return;
+				}
+				closeEvent();
+			}
+			
+			private function saveEvent():Boolean {
+				return savePreferences();
+			}
+			
+			private function closeEvent():void {
+				trace("Closing Preferences window");
+				
+				PopUpManager.removePopUp(this);
+			}
+		]]>
+	</fx:Script>
+	
+	<mx:VBox id="preferencesForm" width="480" paddingTop="5" paddingBottom="5" paddingLeft="5" paddingRight="5">
+		<mx:HBox width="100%">
+			<mx:Label text="Output Directory:" />
+			<mx:TextInput id="outputdirectory" width="100%" change="changeOutputDirectory(event)" />
+			<mx:Button id="browseoutputdirectory" label="..." width="24" click="showOpenOutputDirectoryDialogue()" />
+		</mx:HBox>
+		
+		<mx:HBox width="100%">
+			<mx:Label text="Output Resolution:" />
+			<mx:ComboBox id="outputresolution" editable="true" selectedIndex="8" change="changeOutputResolution(event)">
+				<mx:ArrayCollection>
+					<fx:String>Web Low 4:3 (360×270)</fx:String>
+					<fx:String>Web Medium 4:3 (480×360)</fx:String>
+					<fx:String>Web High 4:3 (640×480)</fx:String>
+					<fx:String>Web Low 16:9 (480×270)</fx:String>
+					<fx:String>Web Medium 16:9 (640×360)</fx:String>
+					<fx:String>Web High 16:9 (854×480)</fx:String>
+					<fx:String>NTSC D1 (656×486)</fx:String>
+					<fx:String>PAL D1 (720×528)</fx:String>
+					<fx:String>HDTV 720p (1280×720)</fx:String>
+					<fx:String>HDTV 1080p (1920×1080)</fx:String>
+					<fx:String>2K 16:9 (2048×1152)</fx:String>
+					<fx:String>4K 16:9 (4096×2304)</fx:String>
+				</mx:ArrayCollection>
+			</mx:ComboBox>
+		</mx:HBox>
+		
+		<mx:HBox width="100%">
+			<mx:Label text="Output Format:" />
+			<mx:ComboBox id="outputformat" change="changeOutputFormat(event)">
+				<mx:ArrayCollection>
+					<fx:String>PNG</fx:String>
+					<fx:String>JPEG</fx:String>
+					<!--<fx:String>Targa</fx:String>-->
+				</mx:ArrayCollection>
+			</mx:ComboBox>
+			<mx:Label id="outputqualitylabel" text="Quality:" enabled="false" />
+			<mx:NumericStepper id="outputquality" minimum="0" maximum="100" value="80" change="changeOutputQuality(event)" enabled="false" />
+		</mx:HBox>
+		
+		<mx:HBox width="100%">
+			<mx:Label text="Maintain aspect by:" />
+			<mx:ComboBox id="aspect" change="changeAspect(event)">
+				<mx:ArrayCollection>
+					<fx:String>Letterboxing</fx:String>
+					<fx:String>Scaling</fx:String>
+					<fx:String>Cropping</fx:String>
+					<fx:String>Not changing the size</fx:String>
+				</mx:ArrayCollection>
+			</mx:ComboBox>
+		</mx:HBox>
+		
+		<mx:HBox width="100%" horizontalAlign="right">
+			<mx:Button id="prefsApply" label="Apply" click="saveEvent()" enabled="false" visible="false" />
+			<mx:Button id="prefsCancel" label="Cancel" click="closeEvent()" />
+			<mx:Button id="prefsOK" label="OK" click="saveAndCloseEvent()" />
+		</mx:HBox>
+	</mx:VBox>
+</s:TitleWindow>
