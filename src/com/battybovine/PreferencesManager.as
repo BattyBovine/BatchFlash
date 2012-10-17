@@ -57,11 +57,11 @@ package com.battybovine
 			if (prefsfile.exists) {
 				var prefsstream:FileStream = new FileStream();
 				prefsstream.open(prefsfile, FileMode.READ);
-				outputdirectory = prefsstream.readUTF();
-				outputresolution = prefsstream.readUTF();
-				outputformat = prefsstream.readInt();
-				outputquality = prefsstream.readInt();
-				aspect = prefsstream.readUTF();
+				outputdirectory = prefsstream.readUTF();	dispatchEvent(new Event(OUTPUTDIRECTORY_CHANGED));
+				outputresolution = prefsstream.readUTF();	dispatchEvent(new Event(OUTPUTRESOLUTION_CHANGED));
+				outputformat = prefsstream.readInt();		dispatchEvent(new Event(OUTPUTFORMAT_CHANGED));
+				outputquality = prefsstream.readInt();		dispatchEvent(new Event(OUTPUTQUALITY_CHANGED));
+				aspect = prefsstream.readUTF();				dispatchEvent(new Event(ASPECT_CHANGED));
 				prefsstream.close();
 			
 				trace("Load complete");

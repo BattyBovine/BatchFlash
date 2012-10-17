@@ -96,6 +96,8 @@
 				// Listen for changes to the resolution and aspect ratio so that we can properly update the preview image
 				prefsman.addEventListener(PreferencesManager.OUTPUTRESOLUTION_CHANGED, prefsOutputResolutionChangedHandler);
 				prefsman.addEventListener(PreferencesManager.ASPECT_CHANGED, prefsAspectChangedHandler);
+				// Load preferences now that we're listening for changes
+				preferencesdialogue.loadPrefsData();
 			}
 			// Listen for changes to the file list
 			private function listChangeEventHandler(e:CollectionEvent):void {

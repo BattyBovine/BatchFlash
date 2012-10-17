@@ -184,18 +184,29 @@
 			
 			
 			public function createPrefsMan():Boolean {
-				prefsman = new PreferencesManager();
+				if (prefsman == null)
+					prefsman = new PreferencesManager();
+				
+				if (prefsman != null) {
+					return true;
+				} else {
+					trace("Error creating PreferencesManager");
+					return false;
+				}
+			}
+			
+			public function loadPrefsData():Boolean {
 				if (prefsman != null) {
 					prefsman.load();
 					if (!prefsman.preferencesLoaded()) {
-						trace("PreferencesManager created, but preferences could not be loaded");
+						trace("Preferences could not be loaded");
 						return false;
 					} else {
 						prefsman.addEventListener(PreferencesManager.LOADED, loadPreferences);
 						return true;
 					}
 				} else {
-					trace("Error creating PreferencesManager");
+					trace("Create PreferencesManager first");
 					return false;
 				}
 			}
