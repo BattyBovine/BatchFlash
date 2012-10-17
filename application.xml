@@ -22,7 +22,7 @@
 ]]>-->
 <application xmlns="http://ns.adobe.com/air/application/3.3">
   <id>com.battybovine.BatchFlash</id>
-  <versionNumber>0.5.3</versionNumber>
+  <versionNumber>0.5.4</versionNumber>
   <filename>BatchFlash</filename>
   <name>BatchFlash</name>
   <description>Automatically render multiple SWF video files to an image sequence in the given folder.</description>
