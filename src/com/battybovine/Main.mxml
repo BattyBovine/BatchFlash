@@ -30,6 +30,7 @@
 	
 	<fx:Script>
 		<![CDATA[
+			import com.battybovine.PreferencesWindow;
 			import com.battybovine.RenderDialogue;
 			
 			import flash.display.Bitmap;
@@ -64,7 +65,8 @@
 			
 			
 			
-			private var prefsman:PreferencesManager = new PreferencesManager();
+			private var prefsman:PreferencesManager;
+			private var preferencesdialogue:PreferencesWindow = new PreferencesWindow();
 			private var renderdialogue:RenderDialogue;
 			
 			private var swfcontroller:MovieClip = new MovieClip();
@@ -84,6 +86,16 @@
 				FlexGlobals.topLevelApplication.addEventListener(NativeDragEvent.NATIVE_DRAG_ENTER, acceptDrop);
 				FlexGlobals.topLevelApplication.addEventListener(NativeDragEvent.NATIVE_DRAG_DROP, handleDrop);
 				FlexGlobals.topLevelApplication.addEventListener(KeyboardEvent.KEY_UP, globalKeyPressed);
+				
+				// Load the preferences, and fail if they can't be loaded
+				if (!preferencesdialogue.createPrefsMan()) {
+					Alert.show("Preferences failed to load. Exiting...", "", Alert.OK, this);
+					this.closeEvent();
+				}
+				prefsman = preferencesdialogue.getPrefsMan();
+				// Listen for changes to the resolution and aspect ratio so that we can properly update the preview image
+				prefsman.addEventListener(PreferencesManager.OUTPUTRESOLUTION_CHANGED, prefsOutputResolutionChangedHandler);
+				prefsman.addEventListener(PreferencesManager.ASPECT_CHANGED, prefsAspectChangedHandler);
 			}
 			// Listen for changes to the file list
 			private function listChangeEventHandler(e:CollectionEvent):void {
@@ -109,6 +121,21 @@
 					beginUnloadingSWF();
 					renderselected.enabled = false;
 				}
+			}
+			// Listen for changes to the resolution setting
+			private function prefsOutputResolutionChangedHandler(e:Event):void {
+				var newsize:int = ((previewImage.height * prefsman.getOutputWidth()) / prefsman.getOutputHeight());
+				if (newsize <= previewImage.maxWidth) {
+					previewImage.width = newsize;
+				} else {
+					newsize = ((previewImage.width * prefsman.getOutputHeight()) / prefsman.getOutputWidth());
+					previewImage.height = newsize;
+				}
+			}
+			// Listen for changes to the aspect ratio setting
+			private function prefsAspectChangedHandler(e:Event):void {
+				if(loadedSWF.source)
+					updatePreviewImage();
 			}
 			
 			// Accept file drops onto the main application window
@@ -141,7 +168,6 @@
 			
 			//private function playSWF():void						{ swfcontroller.play(); }
 			//private function pauseSWF():void					{ swfcontroller.stop(); }
-			private function updatePreviewImage():void			{ previewImage.source = RenderDialogue.captureSWFFrame(loadedSWF, previewImage.width, previewImage.height); }
 			private function seekbarTipFormat(i:Number):String	{ return i.toString(10); }
 			
 			// Add the file to the list when it's opened, whether via the dialogue or from being dropped into the window
@@ -185,7 +211,7 @@
 				
 				// Configure a controller to listen for FRAME_CONSTRUCTED events to allow us to generate preview images at will
 				swfcontroller = e.currentTarget.content as MovieClip;
-				swfcontroller.addEventListener(Event.FRAME_CONSTRUCTED, swfLoadCompleteHandler );
+				swfcontroller.addEventListener(Event.FRAME_CONSTRUCTED, swfLoadCompleteHandler);
 				swfcontroller.gotoAndStop(1);
 				
 				// Initialise the seekbar and listen for user interaction
@@ -207,6 +233,10 @@
 				// Then go to the appropriate frame
 				swfcontroller.gotoAndStop(seekbar.value);
 			}
+			private function updatePreviewImage():void {
+				previewImage.source = RenderDialogue.captureSWFFrame(loadedSWF, previewImage.width, previewImage.height, preferencesdialogue.getPrefsMan().getAspect());
+			}
+			
 			
 			// When the Render All button is clicked, prepare all items for output
 			private function renderAllClicked():void {
@@ -217,12 +247,11 @@
 				prepareItemsForOutput(false);
 			}
 			private function prepareItemsForOutput(all:Boolean = true):Boolean {
-				// Load the preferences, and fail if they can't be read
-				prefsman.load();
-				if (!prefsman.preferencesLoaded()) {
-					trace("Preferences could not be loaded; not rendering a damn thing.");
-					return false;
-				}
+				// Make sure the preferences are loaded before continuing
+				//if (!prefsman.preferencesLoaded()) {
+					//Alert.show("Preferences could not be loaded. Not gonna be able to render anything. Sorry.", "", Alert.OK, this);
+					//return false;
+				//}
 				
 				// Initialise the Render dialogue and display it
 				showRenderDialogue();
@@ -241,8 +270,8 @@
 			
 			// Display the Preferences window
 			private function showPreferencesDialogue():void {
-				var prefswindow:IFlexDisplayObject = PopUpManager.createPopUp(this, com.battybovine.PreferencesWindow, true);
-				PopUpManager.centerPopUp(prefswindow);
+				PopUpManager.addPopUp(preferencesdialogue, this, true);
+				PopUpManager.centerPopUp(preferencesdialogue);
 			}
 			
 			// Show a placeholder About... dialogue for now
@@ -263,6 +292,10 @@
 			private function showRenderDialogue():void {
 				renderdialogue = PopUpManager.createPopUp(this, RenderDialogue, true) as RenderDialogue;
 				PopUpManager.centerPopUp(renderdialogue);
+				renderdialogue.addEventListener(Event.CLOSE, renderDialogueCloseHandler);
+			}
+			private function renderDialogueCloseHandler(e:Event):void {
+				renderdialogue = null;
 			}
 			
 			
@@ -386,7 +419,7 @@
 	</mx:MenuBar>
 	
 	<mx:VBox id="container" width="100%" height="100%" horizontalAlign="center" paddingTop="{mainmenu.height+10}" paddingBottom="10" paddingLeft="10" paddingRight="10">
-		<mx:Image id="previewImage" width="640" height="360" maxWidth="640" maxHeight="360" horizontalAlign="center" verticalAlign="middle" />
+		<mx:Image id="previewImage" width="640" height="360" maxWidth="640" maxHeight="360" opaqueBackground="true" horizontalAlign="center" verticalAlign="middle" />
 		<mx:HSlider id="seekbar" width="100%" minimum="1" maximum="1" value="1" snapInterval="1" dataTipPrecision="0" dataTipFormatFunction="seekbarTipFormat" liveDragging="true" enabled="false" />
 		<mx:List id="filequeue" width="100%" height="100%" allowMultipleSelection="true" verticalScrollPolicy="on" showDataTips="true" />
 		<mx:HBox width="100%" horizontalAlign="right">
@@ -396,6 +429,6 @@
 			<mx:Button id="renderall" label="Render All" click="renderAllClicked()" enabled="false" />
 		</mx:HBox>
 	</mx:VBox>
-	<mx:Image id="loadedSWF" scaleContent="false" showBusyCursor="true" visible="false" includeInLayout="false" />
+	<mx:SWFLoader id="loadedSWF" scaleContent="false" showBusyCursor="true" visible="false" includeInLayout="false" />
 	
 </s:WindowedApplication>

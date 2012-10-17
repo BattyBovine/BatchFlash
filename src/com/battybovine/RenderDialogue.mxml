@@ -29,13 +29,13 @@
 	<fx:Script>
 		<![CDATA[
 			import com.battybovine.RenderDialogue.SwfData;
-			import flash.filesystem.File;
 			
 			import flash.display.Bitmap;
 			import flash.display.BitmapData;
 			import flash.display.Loader;
 			import flash.display.MovieClip;
 			import flash.events.Event;
+			import flash.filesystem.File;
 			import flash.media.SoundTransform;
 			import flash.net.URLRequest;
 			import flash.utils.Timer;
@@ -59,11 +59,13 @@
 			
 			
 			
+			// Add a timer to check for the list of files
 			private function openEvent():void {
 				waitForQueue.addEventListener(TimerEvent.TIMER, onTimerTick);
 				waitForQueue.addEventListener(TimerEvent.TIMER_COMPLETE, onTimerFinish);
 				waitForQueue.start();
 			}
+			// Begin render if the file queue becomes available while we're waiting
 			private function onTimerTick(e:TimerEvent):void {
 				if (tempfilequeue != null) {
 					trace("File queue loaded; continuing...");
@@ -71,28 +73,48 @@
 					startRender();
 				}
 			}
+			// If the timer finishes first, quit
 			private function onTimerFinish(e:TimerEvent):void {
 				trace("Timer ran out; queue will probably never load. Just quit.");
 				Alert.show("There was an issue getting the list of files to render. Explaining would take too long, so just trust us that it isn't working for reasons unknown.",
-							"Error", Alert.OK, this, null, null, Alert.OK)
+							"Error", Alert.OK, this)
 				this.closeEvent();
 			}
 			
+			// Get the list of files from the main application window
 			public function loadFiles(input:Array):void {
 				tempfilequeue = input;
 			}
 			
-			private function updateCapturedImage():void	{ previewImage.source = captureSWFFrame(loadedSWF, previewImage.width, previewImage.height); }
+			// Function for generating the preview image
+			private function updateCapturedImage():void {
+				previewImage.source = captureSWFFrame(loadedSWF, previewImage.width, previewImage.height, prefsman.getAspect());
+			}
 			
+			// Begin rendering
 			public function startRender():void {
+				// Fail if the preferences can't be loaded
 				prefsman.load();
 				if (!prefsman.preferencesLoaded()) {
 					trace("Preferences could not be loaded; not rendering a damn thing.");
-					return;
+					this.closeEvent();
 				}
 				
+				// Resize the preview image container based on the render dimensions
+				var newsize:int = ((previewImage.height * prefsman.getOutputWidth()) / prefsman.getOutputHeight());
+				if (newsize <= previewImage.maxWidth) {
+					previewImage.width = newsize;
+				} else {
+					newsize = ((previewImage.width * prefsman.getOutputHeight()) / prefsman.getOutputWidth());
+					previewImage.height = newsize;
+				}
+				
+				// If all is well and good, start opening the SWF for collecting data
+				progressBarCurrent.label = "Processing...";
+				progressBarTotal.label = "Processing...";
 				openSwfData();
 			}
+			// Load each SWF in succession
 			private function openSwfData():void {
 				if (tempfilequeue.length > 0) {
 					// Open each file in the temporary queue to collect additional data
@@ -107,11 +129,12 @@
 					renderFileQueue();
 				}
 			}
+			// Listener for loaded SWF data
 			private function loadSwfData(e:Event):void {
 				// Load the movie clip and stop it from playing
 				var swf:MovieClip = e.currentTarget.content as MovieClip;
-				swf.stop();
 				swf.soundTransform = new SoundTransform(0,0);
+				swf.gotoAndStop(1);
 				
 				// Add some useful information to our container class
 				tempdata.numFrames = swf.totalFrames;
@@ -129,55 +152,74 @@
 				openSwfData();
 			}
 			
+			// Start preparing for the render process
 			private function renderFileQueue():void {
+				// Collect the total number of frames in each loaded SWF
 				var totalframes:int = 0;
 				for each(var data:SwfData in filequeue) {
 					totalframes += data.numFrames;
 				}
+				// Set the total progress maximum appropriately
 				progressBarTotal.maximum = totalframes;
 				progressBarTotal.indeterminate = false;
 				trace("Progress bar set for " + progressBarTotal.maximum + " frames.");
 				progressBarTotal.setProgress(0, progressBarTotal.maximum);
+				progressBarTotal.label = "Total: %3%%";
 				
 				// Once the total progress bar is prepared, begin rendering the file queue
 				startNewRender();
 			}
+			// Begin the rendering process for all files
 			private function startNewRender():void {
+				// Load the first file in the queue as our next file to render
 				var loader:Loader = new Loader();
 				loader.contentLoaderInfo.addEventListener(Event.COMPLETE, renderSwfOpen);
 				var fLoader:ForcibleLoader = new ForcibleLoader(loader);
 				fLoader.load(new URLRequest(filequeue[0].file));
 			}
+			// Listener for loaded SWFs
 			private function renderSwfOpen(e:Event):void {
+				// Set the dimensions and source of the SWF Loader
 				loadedSWF.width = e.currentTarget.width;
 				loadedSWF.height = e.currentTarget.height;
 				loadedSWF.source = e.currentTarget.content;
 				
+				// Initialise the SWF controller and listen for frame changes
 				renderswf = e.currentTarget.content as MovieClip;
 				renderswf.soundTransform = new SoundTransform(0,0);
 				renderswf.addEventListener(Event.FRAME_CONSTRUCTED, frameEventListener);
 				renderswfframe = 1;
 				renderswf.gotoAndStop(renderswfframe);
 				
-				var nextfile:File = new File(filequeue[0].file); progressBarCurrent.label = nextfile.name + ": %3%%";
+				// Configure the progress bar appropriately
+				var nextfile:File = new File(filequeue[0].file);	progressBarCurrent.label = nextfile.name + ": %3%%";
 				progressBarCurrent.maximum = filequeue[0].numFrames;
 				progressBarCurrent.indeterminate = false;
 				progressBarCurrent.setProgress(0, progressBarCurrent.maximum);
 			}
+			// On each new frame, capture a preview and start the next iteration in the loop
 			private function frameEventListener(e:Event):void { updateCapturedImage(); renderSwfLoop(); }
+			// Start the render loop
 			private function renderSwfLoop():void {
-				if(renderswfframe <= filequeue[0].numFrames) {
+				// Only continue if we haven't exhausted all frames in the SWF file
+				if (renderswfframe <= filequeue[0].numFrames) {
+					// Create the render directory
 					var renderfile:File = new File(filequeue[0].file);
 					var outdirfull:File = new File(prefsman.getOutputDirectory()+File.separator+renderfile.name.replace("."+renderfile.extension,""));
 					outdirfull.createDirectory();
 					
+					// Capture the current loaded SWF frame
 					saveImageToDisk(captureSWFFrame(loadedSWF, prefsman.getOutputWidth(), prefsman.getOutputHeight(), prefsman.getAspect()), outdirfull.nativePath, renderfile.name.replace("." + renderfile.extension, ""), (prefsman.getOutputFormat() == 1)?"jpg":"png", prefsman.getOutputQuality());
 					
+					// Start getting ready for the next frame
 					prepareNextFrame();
 				} else {
+					// If this is the end of the SWF file, unregister everything
 					loadedSWF.unloadAndStop();
 					renderswf.removeEventListener(Event.FRAME_CONSTRUCTED, frameEventListener);
+					// Remove the first file in the queue, pushing the next file to the top
 					filequeue.shift();
+					// If there are new files, keep going; otherwise, quit
 					if(filequeue.length>0) {
 						startNewRender();
 					} else {
@@ -185,6 +227,7 @@
 					}
 				}
 			}
+			// Save the captured image to disk using the given format/quality settings
 			private function saveImageToDisk(bm:Bitmap, folder:String, filename:String = "out", ext:String = "png", jpegquality:int = 80):void {
 				// Find the number of digits in the frame count and pad the current frame to that length
 				var j:int = filequeue[0].numFrames;
@@ -222,6 +265,7 @@
 					trace(e.message);
 				}
 			}
+			// Update the progress bars and increment the current frame
 			private function prepareNextFrame():void {
 				progressBarCurrent.setProgress(renderswfframe, progressBarCurrent.maximum);
 				progressBarTotal.setProgress(progressBarTotal.value + 1, progressBarTotal.maximum);
@@ -229,6 +273,7 @@
 				renderswf.gotoAndStop(renderswfframe);
 			}
 			
+			// Capture the current frame of the given SWFLoader object at the given dimensions and aspect ratio
 			public static function captureSWFFrame(swf:SWFLoader, capturewidth:int, captureheight:int, aspect:String = ""):Bitmap {
 				var fitaspect:Boolean = true;
 				var aspectcrop:Boolean = false;
@@ -290,14 +335,17 @@
 				return bm;
 			}
 			
+			// Cancel the current file in the render queue
 			private function cancelCurrentClicked():void {
 				return;
 			}
 			
+			// Cancel the entire render process
 			private function cancelAllClicked():void {
 				return;
 			}
 			
+			// Close the window
 			private function closeEvent():void {
 				trace("Closing Render Dialogue window");
 				
@@ -308,14 +356,14 @@
 	
 	<mx:VBox id="container" width="100%" height="100%" horizontalAlign="center" paddingTop="10" paddingBottom="10" paddingLeft="10" paddingRight="10">
 		<mx:Image id="previewImage" width="320" height="180" maxWidth="320" maxHeight="180" horizontalAlign="center" verticalAlign="middle" />
-		<mx:ProgressBar id="progressBarCurrent" mode="manual" indeterminate="true" labelPlacement="center" width="100%" height="100%" minimum="0" maximum="0" label="[Name of file]: %3%%" />
+		<mx:ProgressBar id="progressBarCurrent" mode="manual" indeterminate="true" labelPlacement="center" width="100%" height="100%" minimum="0" maximum="0" label="Initialising..." />
 		<mx:HRule />
-		<mx:ProgressBar id="progressBarTotal" mode="manual" indeterminate="true" labelPlacement="center" width="100%" height="100%" minimum="0" maximum="0" label="Total: %3%%" />
+		<mx:ProgressBar id="progressBarTotal" mode="manual" indeterminate="true" labelPlacement="center" width="100%" height="100%" minimum="0" maximum="0" label="Initialising..." />
 		<mx:HBox width="100%" horizontalAlign="right">
 			<mx:Button id="cancelCurrent" label="Cancel Current" click="cancelCurrentClicked()" enabled="false" />
 			<mx:Button id="cancelAll" label="Cancel All" click="cancelAllClicked()" enabled="false" />
 		</mx:HBox>
 	</mx:VBox>
-	<mx:Image id="loadedSWF" scaleContent="false" showBusyCursor="true" visible="false" includeInLayout="false" />
+	<mx:SWFLoader id="loadedSWF" scaleContent="false" showBusyCursor="true" visible="false" includeInLayout="false" />
 	
 </s:TitleWindow>

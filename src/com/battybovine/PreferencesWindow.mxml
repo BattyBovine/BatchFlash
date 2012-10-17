@@ -46,9 +46,7 @@
 			
 			
 			private function openEvent():void {
-				prefsman = new PreferencesManager();
-				prefsman.addEventListener("prefsLoaded", loadPreferences);
-				if(prefsman!=null) prefsman.load();
+				reloadPreferences();
 			}
 			
 			
@@ -94,9 +92,9 @@
 			private function loadPreferences(e:Event):Boolean {
 				outputdirectory.text = prefsman.getOutputDirectory();
 				outputresolution.text = prefsman.getOutputResolution();
-				outputformat.selectedIndex = prefsman.getOutputFormat();	outputformat.dispatchEvent(new ListEvent("change"));
+				outputformat.selectedIndex = prefsman.getOutputFormat();	outputformat.dispatchEvent(new ListEvent(ListEvent.CHANGE));
 				outputquality.value = prefsman.getOutputQuality();
-				aspect.text = prefsman.getAspect();	aspect.dispatchEvent(new ListEvent("change"));
+				aspect.text = prefsman.getAspect();	aspect.dispatchEvent(new ListEvent(ListEvent.CHANGE));
 			
 				if (!validatePreferences()) {
 					trace("Loaded preferences are invalid");
@@ -178,7 +176,44 @@
 			private function closeEvent():void {
 				trace("Closing Preferences window");
 				
+				dispatchEvent(new Event(Event.CLOSING));
+				
 				PopUpManager.removePopUp(this);
+			}
+			
+			
+			
+			public function createPrefsMan():Boolean {
+				prefsman = new PreferencesManager();
+				if (prefsman != null) {
+					prefsman.load();
+					if (!prefsman.preferencesLoaded()) {
+						trace("PreferencesManager created, but preferences could not be loaded");
+						return false;
+					} else {
+						prefsman.addEventListener(PreferencesManager.LOADED, loadPreferences);
+						return true;
+					}
+				} else {
+					trace("Error creating PreferencesManager");
+					return false;
+				}
+			}
+			
+			public function reloadPreferences():Boolean {
+				if (prefsman == null) {
+					this.createPrefsMan();
+				}
+				if (prefsman != null) {
+					prefsman.load();
+					return true;
+				} else {
+					return false;
+				}
+			}
+			
+			public function getPrefsMan():PreferencesManager {
+				return prefsman;
 			}
 		]]>
 	</fx:Script>

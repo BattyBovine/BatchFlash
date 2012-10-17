@@ -36,6 +36,14 @@ package com.battybovine
 	public class PreferencesManager extends EventDispatcher
 	{
 		
+		public static const LOADED:String = "prefsLoaded";
+		public static const SAVED:String = "prefsSaved";
+		public static const OUTPUTDIRECTORY_CHANGED:String = "prefsOutputDirectoryChanged";
+		public static const OUTPUTRESOLUTION_CHANGED:String = "prefsOutputResolutionChanged";
+		public static const OUTPUTFORMAT_CHANGED:String = "prefsOutputFormatChanged";
+		public static const OUTPUTQUALITY_CHANGED:String = "prefsOutputQualityChanged";
+		public static const ASPECT_CHANGED:String = "prefsAspectChanged";
+		
 		private var outputdirectory:String = null;
 		private var outputresolution:String = null;
 		private var outputformat:int = -1;
@@ -57,7 +65,7 @@ package com.battybovine
 				prefsstream.close();
 			
 				trace("Load complete");
-				dispatchEvent(new Event("prefsLoaded"));
+				dispatchEvent(new Event(LOADED));
 			}
 			
 			/* Encrypted Local Store code
@@ -106,29 +114,34 @@ package com.battybovine
 			*/
 			
 			trace("Save complete");
-			dispatchEvent(new Event("prefsSaved"));
+			dispatchEvent(new Event(SAVED));
 		}
 		
 		
 		
 		public function setOutputDirectory(i:String):void {
 			outputdirectory = i;
+			dispatchEvent(new Event(OUTPUTDIRECTORY_CHANGED));
 		}
 		
 		public function setOutputResolution(i:String):void {
 			outputresolution = i;
+			dispatchEvent(new Event(OUTPUTRESOLUTION_CHANGED));
 		}
 		
 		public function setOutputFormat(i:int):void {
 			outputformat = i;
+			dispatchEvent(new Event(OUTPUTFORMAT_CHANGED));
 		}
 		
 		public function setOutputQuality(i:int):void {
 			outputquality = i;
+			dispatchEvent(new Event(OUTPUTQUALITY_CHANGED));
 		}
 		
 		public function setAspect(i:String):void {
 			aspect = i;
+			dispatchEvent(new Event(ASPECT_CHANGED));
 		}
 		
 		
