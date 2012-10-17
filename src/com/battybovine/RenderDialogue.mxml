@@ -201,41 +201,22 @@
 				progressBarCurrent.setProgress(0, progressBarCurrent.maximum);
 				
 				// Enable the Cancel Current button
-				//cancelCurrent.enabled = true;
+				cancelCurrent.enabled = true;
 			}
 			// On each new frame, capture a preview and start the next iteration in the loop
 			private function frameEventListener(e:Event):void { updateCapturedImage(); renderSwfLoop(); }
 			// Start the render loop
 			private function renderSwfLoop():void {
-				// Only continue if we haven't exhausted all frames in the SWF file
-				if (renderswf.currentFrame <= filequeue[0].numFrames) {
-					// Create the render directory
-					var renderfile:File = new File(filequeue[0].file);
-					var outdirfull:File = new File(prefsman.getOutputDirectory()+File.separator+renderfile.name.replace("."+renderfile.extension,""));
-					outdirfull.createDirectory();
-					
-					// Capture the current loaded SWF frame
-					saveImageToDisk(captureSWFFrame(loadedSWF, prefsman.getOutputWidth(), prefsman.getOutputHeight(), prefsman.getAspect()), outdirfull.nativePath, renderfile.name.replace("." + renderfile.extension, ""), (prefsman.getOutputFormat() == 1)?"jpg":"png", prefsman.getOutputQuality());
-					
-					// Start getting ready for the next frame
-					prepareNextFrame();
-				} else {
-					// Start from the beginning with a new file
-					startNewRender();
-				}
-			}
-			private function startNewRender():void {
-				// If this is the end of the SWF file, unregister everything
-				loadedSWF.unloadAndStop();
-				renderswf.removeEventListener(Event.FRAME_CONSTRUCTED, frameEventListener);
-				// Remove the first file in the queue, pushing the next file to the top
-				filequeue.shift();
-				// If there are new files, keep going; otherwise, quit
-				if(filequeue.length>0) {
-					prepareToRender();
-				} else {
-					this.closeEvent();
-				}
+				// Create the render directory
+				var renderfile:File = new File(filequeue[0].file);
+				var outdirfull:File = new File(prefsman.getOutputDirectory()+File.separator+renderfile.name.replace("."+renderfile.extension,""));
+				outdirfull.createDirectory();
+				
+				// Capture the current loaded SWF frame
+				saveImageToDisk(captureSWFFrame(loadedSWF, prefsman.getOutputWidth(), prefsman.getOutputHeight(), prefsman.getAspect()), outdirfull.nativePath, renderfile.name.replace("." + renderfile.extension, ""), (prefsman.getOutputFormat() == 1)?"jpg":"png", prefsman.getOutputQuality());
+				
+				// Start getting ready for the next frame
+				prepareNextFrame();
 			}
 			// Save the captured image to disk using the given format/quality settings
 			private function saveImageToDisk(bm:Bitmap, folder:String, filename:String = "out", ext:String = "png", jpegquality:int = 80):void {
@@ -277,9 +258,30 @@
 			}
 			// Update the progress bars and increment the current frame
 			private function prepareNextFrame():void {
+				// Only continue if we haven't exhausted all frames in the SWF file
 				progressBarCurrent.setProgress(renderswf.currentFrame, progressBarCurrent.maximum);
 				progressBarTotal.setProgress(progressBarTotal.value + 1, progressBarTotal.maximum);
-				renderswf.gotoAndStop(renderswf.currentFrame+1);
+				if ((renderswf.currentFrame + 1) <= renderswf.totalFrames) {
+					renderswf.gotoAndStop(renderswf.currentFrame + 1);
+				} else {
+					startNewRender();
+				}
+			}
+			private function startNewRender():void {
+				// Set the progress bars to the proper final values here
+				progressBarCurrent.setProgress(renderswf.totalFrames, progressBarCurrent.maximum);
+				progressBarTotal.setProgress(progressBarTotal.value + (renderswf.totalFrames - renderswf.currentFrame), progressBarTotal.maximum);
+				// Unregister everything
+				loadedSWF.unloadAndStop();
+				renderswf.removeEventListener(Event.FRAME_CONSTRUCTED, frameEventListener);
+				// Remove the first file in the queue, pushing the next file to the top
+				filequeue.shift();
+				// If there are new files, keep going; otherwise, quit
+				if(filequeue.length>0) {
+					prepareToRender();
+				} else {
+					this.closeEvent();
+				}
 			}
 			
 			// Capture the current frame of the given SWFLoader object at the given dimensions and aspect ratio
