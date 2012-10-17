@@ -42,6 +42,7 @@
 			import flash.events.TimerEvent;
 			import mx.controls.Alert;
 			import mx.controls.SWFLoader;
+			import mx.events.CloseEvent;
 			import mx.graphics.codec.*;
 			import mx.managers.PopUpManager;
 			
@@ -55,7 +56,6 @@
 			
 			private var filequeue:Array = new Array();
 			private var renderswf:MovieClip = new MovieClip();
-			private var renderswfframe:int = 0;
 			
 			
 			
@@ -166,11 +166,15 @@
 				progressBarTotal.setProgress(0, progressBarTotal.maximum);
 				progressBarTotal.label = "Total: %3%%";
 				
-				// Once the total progress bar is prepared, begin rendering the file queue
-				startNewRender();
+				// Enable the Cancel All button here, and make sure Cancel Current is disabled for now
+				cancelAll.enabled = true;
+				cancelCurrent.enabled = false;
+				
+				// Now we can begin rendering
+				prepareToRender();
 			}
 			// Begin the rendering process for all files
-			private function startNewRender():void {
+			private function prepareToRender():void {
 				// Load the first file in the queue as our next file to render
 				var loader:Loader = new Loader();
 				loader.contentLoaderInfo.addEventListener(Event.COMPLETE, renderSwfOpen);
@@ -188,21 +192,23 @@
 				renderswf = e.currentTarget.content as MovieClip;
 				renderswf.soundTransform = new SoundTransform(0,0);
 				renderswf.addEventListener(Event.FRAME_CONSTRUCTED, frameEventListener);
-				renderswfframe = 1;
-				renderswf.gotoAndStop(renderswfframe);
+				renderswf.gotoAndStop(1);
 				
 				// Configure the progress bar appropriately
 				var nextfile:File = new File(filequeue[0].file);	progressBarCurrent.label = nextfile.name + ": %3%%";
 				progressBarCurrent.maximum = filequeue[0].numFrames;
 				progressBarCurrent.indeterminate = false;
 				progressBarCurrent.setProgress(0, progressBarCurrent.maximum);
+				
+				// Enable the Cancel Current button
+				//cancelCurrent.enabled = true;
 			}
 			// On each new frame, capture a preview and start the next iteration in the loop
 			private function frameEventListener(e:Event):void { updateCapturedImage(); renderSwfLoop(); }
 			// Start the render loop
 			private function renderSwfLoop():void {
 				// Only continue if we haven't exhausted all frames in the SWF file
-				if (renderswfframe <= filequeue[0].numFrames) {
+				if (renderswf.currentFrame <= filequeue[0].numFrames) {
 					// Create the render directory
 					var renderfile:File = new File(filequeue[0].file);
 					var outdirfull:File = new File(prefsman.getOutputDirectory()+File.separator+renderfile.name.replace("."+renderfile.extension,""));
@@ -214,17 +220,21 @@
 					// Start getting ready for the next frame
 					prepareNextFrame();
 				} else {
-					// If this is the end of the SWF file, unregister everything
-					loadedSWF.unloadAndStop();
-					renderswf.removeEventListener(Event.FRAME_CONSTRUCTED, frameEventListener);
-					// Remove the first file in the queue, pushing the next file to the top
-					filequeue.shift();
-					// If there are new files, keep going; otherwise, quit
-					if(filequeue.length>0) {
-						startNewRender();
-					} else {
-						this.closeEvent();
-					}
+					// Start from the beginning with a new file
+					startNewRender();
+				}
+			}
+			private function startNewRender():void {
+				// If this is the end of the SWF file, unregister everything
+				loadedSWF.unloadAndStop();
+				renderswf.removeEventListener(Event.FRAME_CONSTRUCTED, frameEventListener);
+				// Remove the first file in the queue, pushing the next file to the top
+				filequeue.shift();
+				// If there are new files, keep going; otherwise, quit
+				if(filequeue.length>0) {
+					prepareToRender();
+				} else {
+					this.closeEvent();
 				}
 			}
 			// Save the captured image to disk using the given format/quality settings
@@ -232,7 +242,7 @@
 				// Find the number of digits in the frame count and pad the current frame to that length
 				var j:int = filequeue[0].numFrames;
 				for (var i:int = 1; j >= 10; i++ ) { j /= 10; }
-				var framepad:String = "" + renderswfframe;
+				var framepad:String = "" + renderswf.currentFrame;
 				while (framepad.length < i) { framepad = "0" + framepad; }
 				
 				// Save the image
@@ -267,10 +277,9 @@
 			}
 			// Update the progress bars and increment the current frame
 			private function prepareNextFrame():void {
-				progressBarCurrent.setProgress(renderswfframe, progressBarCurrent.maximum);
+				progressBarCurrent.setProgress(renderswf.currentFrame, progressBarCurrent.maximum);
 				progressBarTotal.setProgress(progressBarTotal.value + 1, progressBarTotal.maximum);
-				renderswfframe++;
-				renderswf.gotoAndStop(renderswfframe);
+				renderswf.gotoAndStop(renderswf.currentFrame+1);
 			}
 			
 			// Capture the current frame of the given SWFLoader object at the given dimensions and aspect ratio
@@ -337,12 +346,30 @@
 			
 			// Cancel the current file in the render queue
 			private function cancelCurrentClicked():void {
-				return;
+				// Confirm the action with the user
+				Alert.show("Are you sure you wish to cancel the current render job?", "Cancel current job?",
+					Alert.YES | Alert.NO, this, cancelCurrentConfirmationHandler, null, Alert.NO);
+			}
+			// If the user wishes to cancel the current job...
+			private function cancelCurrentConfirmationHandler(e:CloseEvent):void {
+				// ...start preparing the next loop iteration.
+				startNewRender();
 			}
 			
 			// Cancel the entire render process
 			private function cancelAllClicked():void {
-				return;
+				// Confirm the action with the user
+				Alert.show("Are you sure you wish to cancel all render jobs?", "Cancel all jobs?",
+					Alert.YES | Alert.NO, this, cancelAllConfirmationHandler, null, Alert.NO);
+			}
+			// Once we've confirmed that the user wishes to cancel...
+			private function cancelAllConfirmationHandler(e:CloseEvent):void {
+				// ...remove the event listener for the loop...
+				renderswf.removeEventListener(Event.FRAME_CONSTRUCTED, frameEventListener);
+				// ...clear out the file queue...
+				filequeue = null;
+				// ...and close the window.
+				closeEvent();
 			}
 			
 			// Close the window
