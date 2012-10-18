@@ -51,10 +51,10 @@
 			private var prefsman:PreferencesManager = new PreferencesManager();
 			
 			private var waitForQueue:Timer = new Timer(10, 100);
-			private var tempfilequeue:Array;
+			private var tempfilequeue:Array = null;
 			private var tempdata:SwfData;
 			
-			private var filequeue:Array = new Array();
+			private var filequeue:Array = null;
 			private var renderswf:MovieClip = new MovieClip();
 			
 			
@@ -93,6 +93,9 @@
 			
 			// Begin rendering
 			public function startRender():void {
+				// Create our filequeue variable to permanently store file data
+				filequeue = new Array();
+				
 				// Fail if the preferences can't be loaded
 				prefsman.load();
 				if (!prefsman.preferencesLoaded()) {
@@ -173,6 +176,7 @@
 				// Now we can begin rendering
 				prepareToRender();
 			}
+			
 			// Begin the rendering process for all files
 			private function prepareToRender():void {
 				// Load the first file in the queue as our next file to render
@@ -195,10 +199,15 @@
 				renderswf.gotoAndStop(1);
 				
 				// Configure the progress bar appropriately
-				var nextfile:File = new File(filequeue[0].file);	progressBarCurrent.label = nextfile.name + ": %3%%";
-				progressBarCurrent.maximum = filequeue[0].numFrames;
-				progressBarCurrent.indeterminate = false;
-				progressBarCurrent.setProgress(0, progressBarCurrent.maximum);
+				if (filequeue != null) {
+					var nextfile:File = new File(filequeue[0].file);
+					progressBarCurrent.label = nextfile.name + ": %3%%";
+					progressBarCurrent.maximum = filequeue[0].numFrames;
+					progressBarCurrent.indeterminate = false;
+					progressBarCurrent.setProgress(0, progressBarCurrent.maximum);
+				} else {
+					trace("Why is this function being called more than it needs to be? Seriously.");
+				}
 				
 				// Enable the Cancel Current button
 				cancelCurrent.enabled = true;
@@ -261,25 +270,26 @@
 				// Only continue if we haven't exhausted all frames in the SWF file
 				progressBarCurrent.setProgress(renderswf.currentFrame, progressBarCurrent.maximum);
 				progressBarTotal.setProgress(progressBarTotal.value + 1, progressBarTotal.maximum);
-				if ((renderswf.currentFrame + 1) <= renderswf.totalFrames) {
+				if ((renderswf.currentFrame) < renderswf.totalFrames) {
 					renderswf.gotoAndStop(renderswf.currentFrame + 1);
 				} else {
 					startNewRender();
 				}
 			}
 			private function startNewRender():void {
-				// Set the progress bars to the proper final values here
-				progressBarCurrent.setProgress(renderswf.totalFrames, progressBarCurrent.maximum);
-				progressBarTotal.setProgress(progressBarTotal.value + (renderswf.totalFrames - renderswf.currentFrame), progressBarTotal.maximum);
 				// Unregister everything
 				loadedSWF.unloadAndStop();
 				renderswf.removeEventListener(Event.FRAME_CONSTRUCTED, frameEventListener);
+				// Set the progress bars to the proper final values here
+				progressBarCurrent.setProgress(renderswf.totalFrames, progressBarCurrent.maximum);
+				progressBarTotal.setProgress(progressBarTotal.value + (renderswf.totalFrames - renderswf.currentFrame), progressBarTotal.maximum);
 				// Remove the first file in the queue, pushing the next file to the top
 				filequeue.shift();
 				// If there are new files, keep going; otherwise, quit
 				if(filequeue.length>0) {
 					prepareToRender();
 				} else {
+					filequeue = null;
 					this.closeEvent();
 				}
 			}
@@ -354,8 +364,10 @@
 			}
 			// If the user wishes to cancel the current job...
 			private function cancelCurrentConfirmationHandler(e:CloseEvent):void {
-				// ...start preparing the next loop iteration.
-				startNewRender();
+				if(e.detail == Alert.YES) {
+					// ...start preparing the next loop iteration.
+					startNewRender();
+				}
 			}
 			
 			// Cancel the entire render process
@@ -366,12 +378,14 @@
 			}
 			// Once we've confirmed that the user wishes to cancel...
 			private function cancelAllConfirmationHandler(e:CloseEvent):void {
-				// ...remove the event listener for the loop...
-				renderswf.removeEventListener(Event.FRAME_CONSTRUCTED, frameEventListener);
-				// ...clear out the file queue...
-				filequeue = null;
-				// ...and close the window.
-				closeEvent();
+				if(e.detail == Alert.YES) {
+					// ...remove the event listener for the loop...
+					renderswf.removeEventListener(Event.FRAME_CONSTRUCTED, frameEventListener);
+					// ...clear out the file queue...
+					filequeue = null;
+					// ...and close the window.
+					closeEvent();
+				}
 			}
 			
 			// Close the window

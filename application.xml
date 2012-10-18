@@ -33,9 +33,6 @@
     <visible>true</visible>
     <minimizable>true</minimizable>
     <maximizable>true</maximizable>
-    <!--<systemChrome>standard</systemChrome>-->
-    <width>668</width>
-    <height>600</height>
     <systemChrome>standard</systemChrome>
   </initialWindow>
   <!--
