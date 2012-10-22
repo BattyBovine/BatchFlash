@@ -48,9 +48,17 @@
 			
 			
 			
+			public static const QUEUE_RECEIVED:String = "QueueReceived";
+			public static const INIT_COMPLETE:String = "InitialisationComplete";
+			public static const QUEUE_PROCESSED:String = "QueueProcessed";
+			public static const RENDER_PREPARATION_COMPLETE:String = "RenderPreparationComplete";
+			public static const FRAME_RENDERED:String = "FrameRendered";
+			public static const RENDER_COMPLETE:String = "RenderComplete";
+			
+			
+			
 			private var prefsman:PreferencesManager = new PreferencesManager();
 			
-			private var waitForQueue:Timer = new Timer(10, 100);
 			private var tempfilequeue:Array = null;
 			private var tempdata:SwfData;
 			
@@ -61,38 +69,21 @@
 			
 			// Add a timer to check for the list of files
 			private function openEvent():void {
-				waitForQueue.addEventListener(TimerEvent.TIMER, onTimerTick);
-				waitForQueue.addEventListener(TimerEvent.TIMER_COMPLETE, onTimerFinish);
-				waitForQueue.start();
-			}
-			// Begin render if the file queue becomes available while we're waiting
-			private function onTimerTick(e:TimerEvent):void {
-				if (tempfilequeue != null) {
-					trace("File queue loaded; continuing...");
-					waitForQueue.stop();
-					startRender();
-				}
-			}
-			// If the timer finishes first, quit
-			private function onTimerFinish(e:TimerEvent):void {
-				trace("Timer ran out; queue will probably never load. Just quit.");
-				Alert.show("There was an issue getting the list of files to render. Explaining would take too long, so just trust us that it isn't working for reasons unknown.",
-							"Error", Alert.OK, this)
-				this.closeEvent();
+				this.addEventListener(RenderWindow.QUEUE_RECEIVED, startRender);
+				this.addEventListener(RenderWindow.INIT_COMPLETE, openSwfData);
+				this.addEventListener(RenderWindow.QUEUE_PROCESSED, prepareForRender);
+				this.addEventListener(RenderWindow.RENDER_PREPARATION_COMPLETE, renderNextFile);
+				this.addEventListener(RenderWindow.RENDER_COMPLETE, startNewRender);
 			}
 			
 			// Get the list of files from the main application window
 			public function loadFiles(input:Array):void {
 				tempfilequeue = input;
-			}
-			
-			// Function for generating the preview image
-			private function updateCapturedImage():void {
-				previewImage.source = captureSWFFrame(loadedSWF, previewImage.width, previewImage.height, prefsman.getAspect());
+				this.dispatchEvent(new Event(QUEUE_RECEIVED));
 			}
 			
 			// Begin rendering
-			public function startRender():void {
+			public function startRender(e:Event = null):void {
 				// Create our filequeue variable to permanently store file data
 				filequeue = new Array();
 				
@@ -115,10 +106,11 @@
 				// If all is well and good, start opening the SWF for collecting data
 				progressBarCurrent.label = "Processing...";
 				progressBarTotal.label = "Processing...";
-				openSwfData();
+				this.dispatchEvent(new Event(INIT_COMPLETE));
 			}
+			
 			// Load each SWF in succession
-			private function openSwfData():void {
+			private function openSwfData(e:Event = null):void {
 				if (tempfilequeue.length > 0) {
 					// Open each file in the temporary queue to collect additional data
 					tempdata = new SwfData()
@@ -129,11 +121,11 @@
 					tempdata.file = tempfilequeue[0];
 				} else {
 					// Once the temporary queue is empty, begin the rendering process
-					renderFileQueue();
+					this.dispatchEvent(new Event(QUEUE_PROCESSED));
 				}
 			}
 			// Listener for loaded SWF data
-			private function loadSwfData(e:Event):void {
+			private function loadSwfData(e:Event = null):void {
 				// Load the movie clip and stop it from playing
 				var swf:MovieClip = e.currentTarget.content as MovieClip;
 				swf.soundTransform = new SoundTransform(0,0);
@@ -152,11 +144,11 @@
 				tempdata.empty();
 				
 				// Then restart the process until the temp queue is empty
-				openSwfData();
+				this.dispatchEvent(new Event(INIT_COMPLETE));
 			}
 			
 			// Start preparing for the render process
-			private function renderFileQueue():void {
+			private function prepareForRender(e:Event = null):void {
 				// Collect the total number of frames in each loaded SWF
 				var totalframes:int = 0;
 				for each(var data:SwfData in filequeue) {
@@ -174,11 +166,11 @@
 				cancelCurrent.enabled = false;
 				
 				// Now we can begin rendering
-				prepareToRender();
+				this.dispatchEvent(new Event(RENDER_PREPARATION_COMPLETE));
 			}
 			
 			// Begin the rendering process for all files
-			private function prepareToRender():void {
+			private function renderNextFile(e:Event = null):void {
 				// Load the first file in the queue as our next file to render
 				var loader:Loader = new Loader();
 				loader.contentLoaderInfo.addEventListener(Event.COMPLETE, renderSwfOpen);
@@ -192,30 +184,30 @@
 				loadedSWF.height = e.currentTarget.height;
 				loadedSWF.source = e.currentTarget.content;
 				
-				// Initialise the SWF controller and listen for frame changes
+				// Initialise the SWF controller and prepare event listeners
 				renderswf = e.currentTarget.content as MovieClip;
 				renderswf.soundTransform = new SoundTransform(0,0);
-				renderswf.addEventListener(Event.FRAME_CONSTRUCTED, frameEventListener);
+				renderswf.addEventListener(Event.FRAME_CONSTRUCTED, updateCapturedImage);
+				renderswf.addEventListener(Event.FRAME_CONSTRUCTED, renderSWFFrame);
+				this.addEventListener(FRAME_RENDERED, prepareNextFrame);
 				renderswf.gotoAndStop(1);
 				
 				// Configure the progress bar appropriately
-				if (filequeue != null) {
-					var nextfile:File = new File(filequeue[0].file);
-					progressBarCurrent.label = nextfile.name + ": %3%%";
-					progressBarCurrent.maximum = filequeue[0].numFrames;
-					progressBarCurrent.indeterminate = false;
-					progressBarCurrent.setProgress(0, progressBarCurrent.maximum);
-				} else {
-					trace("Why is this function being called more than it needs to be? Seriously.");
-				}
-				
+				var nextfile:File = new File(filequeue[0].file);
+				progressBarCurrent.label = nextfile.name + ": %3%%";
+				progressBarCurrent.maximum = filequeue[0].numFrames;
+				progressBarCurrent.indeterminate = false;
+				progressBarCurrent.setProgress(0, progressBarCurrent.maximum);
+			
 				// Enable the Cancel Current button
 				cancelCurrent.enabled = true;
 			}
-			// On each new frame, capture a preview and start the next iteration in the loop
-			private function frameEventListener(e:Event):void { updateCapturedImage(); renderSwfLoop(); }
-			// Start the render loop
-			private function renderSwfLoop():void {
+			// Function for generating the preview image
+			private function updateCapturedImage(e:Event = null):void {
+				previewImage.source = captureSWFFrame(loadedSWF, previewImage.width, previewImage.height, prefsman.getAspect());
+			}
+			// Start rendering the current frame
+			private function renderSWFFrame(e:Event = null):void {
 				// Create the render directory
 				var renderfile:File = new File(filequeue[0].file);
 				var outdirfull:File = new File(prefsman.getOutputDirectory()+File.separator+renderfile.name.replace("."+renderfile.extension,""));
@@ -225,7 +217,7 @@
 				saveImageToDisk(captureSWFFrame(loadedSWF, prefsman.getOutputWidth(), prefsman.getOutputHeight(), prefsman.getAspect()), outdirfull.nativePath, renderfile.name.replace("." + renderfile.extension, ""), (prefsman.getOutputFormat() == 1)?"jpg":"png", prefsman.getOutputQuality());
 				
 				// Start getting ready for the next frame
-				prepareNextFrame();
+				this.dispatchEvent(new Event(FRAME_RENDERED));
 			}
 			// Save the captured image to disk using the given format/quality settings
 			private function saveImageToDisk(bm:Bitmap, folder:String, filename:String = "out", ext:String = "png", jpegquality:int = 80):void {
@@ -266,20 +258,21 @@
 				}
 			}
 			// Update the progress bars and increment the current frame
-			private function prepareNextFrame():void {
+			private function prepareNextFrame(e:Event = null):void {
 				// Only continue if we haven't exhausted all frames in the SWF file
 				progressBarCurrent.setProgress(renderswf.currentFrame, progressBarCurrent.maximum);
 				progressBarTotal.setProgress(progressBarTotal.value + 1, progressBarTotal.maximum);
 				if ((renderswf.currentFrame) < renderswf.totalFrames) {
 					renderswf.gotoAndStop(renderswf.currentFrame + 1);
 				} else {
-					startNewRender();
+					this.dispatchEvent(new Event(RENDER_COMPLETE));
 				}
 			}
-			private function startNewRender():void {
+			private function startNewRender(e:Event = null):void {
 				// Unregister everything
 				loadedSWF.unloadAndStop();
-				renderswf.removeEventListener(Event.FRAME_CONSTRUCTED, frameEventListener);
+				renderswf.removeEventListener(Event.FRAME_CONSTRUCTED, updateCapturedImage);
+				renderswf.removeEventListener(Event.FRAME_CONSTRUCTED, renderSWFFrame);
 				// Set the progress bars to the proper final values here
 				progressBarCurrent.setProgress(renderswf.totalFrames, progressBarCurrent.maximum);
 				progressBarTotal.setProgress(progressBarTotal.value + (renderswf.totalFrames - renderswf.currentFrame), progressBarTotal.maximum);
@@ -287,9 +280,8 @@
 				filequeue.shift();
 				// If there are new files, keep going; otherwise, quit
 				if(filequeue.length>0) {
-					prepareToRender();
+					this.dispatchEvent(new Event(RENDER_PREPARATION_COMPLETE));
 				} else {
-					filequeue = null;
 					this.closeEvent();
 				}
 			}
@@ -364,9 +356,10 @@
 			}
 			// If the user wishes to cancel the current job...
 			private function cancelCurrentConfirmationHandler(e:CloseEvent):void {
+				trace("The current render job has been cancelled.");
 				if(e.detail == Alert.YES) {
 					// ...start preparing the next loop iteration.
-					startNewRender();
+					this.dispatchEvent(new Event(RENDER_COMPLETE));
 				}
 			}
 			
@@ -378,11 +371,11 @@
 			}
 			// Once we've confirmed that the user wishes to cancel...
 			private function cancelAllConfirmationHandler(e:CloseEvent):void {
-				if(e.detail == Alert.YES) {
-					// ...remove the event listener for the loop...
-					renderswf.removeEventListener(Event.FRAME_CONSTRUCTED, frameEventListener);
-					// ...clear out the file queue...
-					filequeue = null;
+				if (e.detail == Alert.YES) {
+					trace("All render jobs have been cancelled.");
+					// ...remove the event listeners for the loop...
+					renderswf.removeEventListener(Event.FRAME_CONSTRUCTED, updateCapturedImage);
+					renderswf.removeEventListener(Event.FRAME_CONSTRUCTED, renderSWFFrame);
 					// ...and close the window.
 					closeEvent();
 				}
@@ -398,7 +391,9 @@
 	</fx:Script>
 	
 	<mx:VBox id="container" width="100%" height="100%" horizontalAlign="center" paddingTop="10" paddingBottom="10" paddingLeft="10" paddingRight="10">
-		<mx:Image id="previewImage" width="320" height="180" maxWidth="320" maxHeight="180" horizontalAlign="center" verticalAlign="middle" />
+		<mx:VBox width="320" height="180" maxWidth="320" maxHeight="180" horizontalAlign="center" verticalAlign="middle">
+			<mx:Image id="previewImage" width="320" height="180" maxWidth="320" maxHeight="180" horizontalAlign="center" />
+		</mx:VBox>
 		<mx:ProgressBar id="progressBarCurrent" mode="manual" indeterminate="true" labelPlacement="center" width="100%" height="100%" minimum="0" maximum="0" label="Initialising..." />
 		<mx:HRule />
 		<mx:ProgressBar id="progressBarTotal" mode="manual" indeterminate="true" labelPlacement="center" width="100%" height="100%" minimum="0" maximum="0" label="Initialising..." />
