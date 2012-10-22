@@ -21,7 +21,7 @@
  * 
  */
 
-package com.battybovine.RenderDialogue 
+package com.battybovine.RenderWindow
 {
 	/**
 	 * ...

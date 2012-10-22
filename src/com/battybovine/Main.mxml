@@ -31,43 +31,22 @@
 	<fx:Script>
 		<![CDATA[
 			import com.battybovine.PreferencesWindow;
-			import com.battybovine.RenderDialogue;
+			import com.battybovine.RenderWindow;
 			
-			import flash.display.Bitmap;
-			import flash.display.BitmapData;
-			import flash.display.DisplayObject;
-			import flash.display.IBitmapDrawable;
-			import flash.events.Event;
-			import flash.events.MouseEvent;
-			import flash.filesystem.File;
-			import flash.filesystem.FileStream;
-			import flash.geom.Matrix;
-			import flash.geom.Point;
-			import flash.geom.Rectangle;
-			import flash.media.SoundTransform;
-			import flash.ui.Keyboard;
-			import flash.utils.ByteArray;
 			import mx.controls.Alert;
-			import mx.controls.Image;
 			import mx.core.FlexGlobals;
-			import mx.core.IFlexDisplayObject;
-			import mx.core.WindowedApplication;
 			import mx.collections.ArrayCollection;
 			import mx.events.CloseEvent;
 			import mx.events.CollectionEvent;
 			import mx.events.CollectionEventKind;
 			import mx.events.MenuEvent;
 			import mx.managers.PopUpManager;
-			import flash.desktop.NativeApplication;
-			import flash.desktop.NativeDragManager;
-			import flash.events.KeyboardEvent;
-			import flash.events.NativeDragEvent;
 			
 			
 			
 			private var prefsman:PreferencesManager;
-			private var preferencesdialogue:PreferencesWindow = new PreferencesWindow();
-			private var renderdialogue:RenderDialogue;
+			private var prefswin:PreferencesWindow = new PreferencesWindow();
+			private var renderwin:RenderWindow;
 			
 			private var swfcontroller:MovieClip = new MovieClip();
 			private var filequeuedata:ArrayCollection = new ArrayCollection();
@@ -88,16 +67,16 @@
 				FlexGlobals.topLevelApplication.addEventListener(KeyboardEvent.KEY_UP, globalKeyPressed);
 				
 				// Load the preferences, and fail if they can't be loaded
-				if (!preferencesdialogue.createPrefsMan()) {
+				if (!prefswin.createPrefsMan()) {
 					Alert.show("Preferences failed to load. Exiting...", "", Alert.OK, this);
 					this.closeEvent();
 				}
-				prefsman = preferencesdialogue.getPrefsMan();
+				prefsman = prefswin.getPrefsMan();
 				// Listen for changes to the resolution and aspect ratio so that we can properly update the preview image
 				prefsman.addEventListener(PreferencesManager.OUTPUTRESOLUTION_CHANGED, prefsOutputResolutionChangedHandler);
 				prefsman.addEventListener(PreferencesManager.ASPECT_CHANGED, prefsAspectChangedHandler);
 				// Load preferences now that we're listening for changes
-				preferencesdialogue.loadPrefsData();
+				prefswin.loadPrefsData();
 			}
 			// Listen for changes to the file list
 			private function listChangeEventHandler(e:CollectionEvent):void {
@@ -237,7 +216,7 @@
 				swfcontroller.gotoAndStop(seekbar.value);
 			}
 			private function updatePreviewImage():void {
-				previewImage.source = RenderDialogue.captureSWFFrame(loadedSWF, previewImage.width, previewImage.height, preferencesdialogue.getPrefsMan().getAspect());
+				previewImage.source = RenderWindow.captureSWFFrame(loadedSWF, previewImage.width, previewImage.height, prefsman.getAspect());
 			}
 			
 			
@@ -257,13 +236,13 @@
 				//}
 				
 				// Initialise the Render dialogue and display it
-				showRenderDialogue();
+				showRenderWindow();
 				
 				// Find which array to load into the render dialogue depending on the button that was clicked
 				if (all) {
-					renderdialogue.loadFiles(filequeuedata.toArray());
+					renderwin.loadFiles(filequeuedata.toArray());
 				} else {
-					renderdialogue.loadFiles(filequeue.selectedItems);
+					renderwin.loadFiles(filequeue.selectedItems);
 				}
 				
 				return true;
@@ -272,9 +251,9 @@
 			
 			
 			// Display the Preferences window
-			private function showPreferencesDialogue():void {
-				PopUpManager.addPopUp(preferencesdialogue, this, true);
-				PopUpManager.centerPopUp(preferencesdialogue);
+			private function showPreferencesWindow():void {
+				PopUpManager.addPopUp(prefswin, this, true);
+				PopUpManager.centerPopUp(prefswin);
 			}
 			
 			// Show a placeholder About... dialogue for now
@@ -292,14 +271,10 @@
 			}
 			
 			// Initialise and display the Render dialogue
-			private function showRenderDialogue():void {
-				renderdialogue = PopUpManager.createPopUp(this, RenderDialogue, true) as RenderDialogue;
-				PopUpManager.centerPopUp(renderdialogue);
-				//renderdialogue.addEventListener(Event.CLOSE, renderDialogueCloseHandler);
+			private function showRenderWindow():void {
+				renderwin = PopUpManager.createPopUp(this, RenderWindow, true) as RenderWindow;
+				PopUpManager.centerPopUp(renderwin);
 			}
-			//private function renderDialogueCloseHandler(e:Event):void {
-				//renderdialogue = null;
-			//}
 			
 			
 			/*
@@ -376,7 +351,7 @@
 			protected function menuItemClickHandler(e:MenuEvent):void {
 				trace("Menu item:", e.label);
 				if(e.label.match(/^open\sswf/i)) { showOpenSwfDialogue(); }			// Open SWF File...
-				if(e.label.match(/^preferences/i)) { showPreferencesDialogue(); }	// Preferences
+				if(e.label.match(/^preferences/i)) { showPreferencesWindow(); }	// Preferences
 				if(e.label.match(/^quit/i)) { quitApplication(); }					// Quit
 				if(e.label.match(/^about(\s.*)?\.\.\./i)) { showAboutDialogue(); }	// About...
 			}
@@ -428,7 +403,7 @@
 		<mx:HSlider id="seekbar" width="100%" minimum="1" maximum="1" value="1" snapInterval="1" dataTipPrecision="0" dataTipFormatFunction="seekbarTipFormat" liveDragging="true" enabled="false" />
 		<mx:List id="filequeue" width="100%" height="100%" allowMultipleSelection="true" verticalScrollPolicy="on" showDataTips="true" />
 		<mx:HBox width="100%" horizontalAlign="right">
-			<mx:Button id="renderpreferences" icon="@Embed(source='../../../res/gearicon.png')" width="28" click="showPreferencesDialogue()" enabled="true" />
+			<mx:Button id="renderpreferences" icon="@Embed(source='../../../res/gearicon.png')" width="28" click="showPreferencesWindow()" enabled="true" />
 			<mx:Spacer width="100%" />
 			<mx:Button id="renderselected" label="Render Selected" click="renderSelectedClicked()" enabled="false" />
 			<mx:Button id="renderall" label="Render All" click="renderAllClicked()" enabled="false" />

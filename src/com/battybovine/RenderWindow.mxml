@@ -28,7 +28,7 @@
 	
 	<fx:Script>
 		<![CDATA[
-			import com.battybovine.RenderDialogue.SwfData;
+			import com.battybovine.RenderWindow.SwfData;
 			
 			import flash.display.Bitmap;
 			import flash.display.BitmapData;
