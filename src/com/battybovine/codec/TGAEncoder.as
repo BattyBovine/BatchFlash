@@ -21,7 +21,7 @@
  * 
  */
 
-package com.battybovine
+package com.battybovine.codec
 {
 
 import flash.utils.Endian;
