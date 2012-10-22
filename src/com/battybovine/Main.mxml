@@ -351,7 +351,7 @@
 			protected function menuItemClickHandler(e:MenuEvent):void {
 				trace("Menu item:", e.label);
 				if(e.label.match(/^open\sswf/i)) { showOpenSwfDialogue(); }			// Open SWF File...
-				if(e.label.match(/^preferences/i)) { showPreferencesWindow(); }	// Preferences
+				if(e.label.match(/^preferences/i)) { showPreferencesWindow(); }		// Preferences
 				if(e.label.match(/^quit/i)) { quitApplication(); }					// Quit
 				if(e.label.match(/^about(\s.*)?\.\.\./i)) { showAboutDialogue(); }	// About...
 			}

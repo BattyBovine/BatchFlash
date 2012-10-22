@@ -46,7 +46,7 @@
 			
 			
 			private function openEvent():void {
-				reloadPreferences();
+				loadPreferences();
 			}
 			
 			
@@ -89,36 +89,45 @@
 			
 			
 			
-			private function loadPreferences(e:Event):Boolean {
-				outputdirectory.text = prefsman.getOutputDirectory();
-				outputresolution.text = prefsman.getOutputResolution();
-				outputformat.selectedIndex = prefsman.getOutputFormat();	outputformat.dispatchEvent(new ListEvent(ListEvent.CHANGE));
-				outputquality.value = prefsman.getOutputQuality();
-				aspect.text = prefsman.getAspect();	aspect.dispatchEvent(new ListEvent(ListEvent.CHANGE));
-			
-				if (!validatePreferences()) {
-					trace("Loaded preferences are invalid");
-					return false;
+			private function loadPreferences(e:Event = null):Boolean {
+				if(prefsman) {
+					if(outputdirectory && outputresolution && outputformat && outputquality && aspect) {
+						outputdirectory.text = prefsman.getOutputDirectory();
+						outputresolution.text = prefsman.getOutputResolution();
+						outputformat.selectedIndex = prefsman.getOutputFormat();	outputformat.dispatchEvent(new ListEvent(ListEvent.CHANGE));
+						outputquality.value = prefsman.getOutputQuality();
+						aspect.text = prefsman.getAspect();	aspect.dispatchEvent(new ListEvent(ListEvent.CHANGE));
+						
+						if (!validatePreferences()) {
+							trace("Loaded preferences are invalid");
+							return false;
+						}
+						
+						return true;
+					}
 				}
 				
-				return true;
+				return false;
 			}
 			
 			private function savePreferences():Boolean {
-				if (validatePreferences()) {
-					prefsman.setOutputDirectory(outputdirectory.text);
-					prefsman.setOutputResolution(outputresolution.text);
-					prefsman.setOutputFormat(outputformat.selectedIndex);
-					prefsman.setOutputQuality(outputquality.value);
-					prefsman.setAspect(aspect.selectedLabel);
-					prefsman.save();
-				} else {
-					trace("Preferences invalid; not saving");
-					return false;
+				if (prefsman) {
+					if (validatePreferences()) {
+						prefsman.setOutputDirectory(outputdirectory.text);
+						prefsman.setOutputResolution(outputresolution.text);
+						prefsman.setOutputFormat(outputformat.selectedIndex);
+						prefsman.setOutputQuality(outputquality.value);
+						prefsman.setAspect(aspect.selectedLabel);
+						prefsman.save();
+						prefsApply.enabled = false;
+						return true;
+					} else {
+						trace("Preferences invalid; not saving");
+						return false;
+					}
 				}
-				prefsApply.enabled = false;
 				
-				return true;
+				return false;
 			}
 			
 			private function validatePreferences():Boolean {
@@ -188,6 +197,7 @@
 					prefsman = new PreferencesManager();
 				
 				if (prefsman != null) {
+					prefsman.addEventListener(PreferencesManager.LOADED, loadPreferences);
 					return true;
 				} else {
 					trace("Error creating PreferencesManager");
@@ -202,7 +212,6 @@
 						trace("Preferences could not be loaded");
 						return false;
 					} else {
-						prefsman.addEventListener(PreferencesManager.LOADED, loadPreferences);
 						return true;
 					}
 				} else {
@@ -213,14 +222,13 @@
 			
 			public function reloadPreferences():Boolean {
 				if (prefsman == null) {
-					this.createPrefsMan();
+					if (this.createPrefsMan()) {
+						return true;
+					} else {
+						return false;
+					}
 				}
-				if (prefsman != null) {
-					prefsman.load();
-					return true;
-				} else {
-					return false;
-				}
+				return true;
 			}
 			
 			public function getPrefsMan():PreferencesManager {
