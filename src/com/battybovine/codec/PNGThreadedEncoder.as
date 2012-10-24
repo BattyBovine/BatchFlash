@@ -13,8 +13,15 @@ package com.battybovine.codec
 {
 
 import flash.display.BitmapData;
+import flash.events.Event;
+import flash.events.EventDispatcher;
+import flash.events.TimerEvent;
+import flash.filesystem.File;
+import flash.filesystem.FileMode;
+import flash.filesystem.FileStream;
 import flash.utils.ByteArray;
-import mx.graphics.codec.IImageEncoder;
+import flash.utils.Timer;
+import flash.utils.getTimer;
 
 /**
  *  The PNGEncoder class converts raw bitmap images into encoded
@@ -27,7 +34,7 @@ import mx.graphics.codec.IImageEncoder;
  *  @playerversion AIR 1.1
  *  @productversion Flex 3
  */
-public class PNGEncoder implements IImageEncoder
+public class PNGThreadedEncoder extends EventDispatcher implements IThreadedImageEncoder
 {
 	//--------------------------------------------------------------------------
 	//
@@ -55,10 +62,10 @@ public class PNGEncoder implements IImageEncoder
      *  @playerversion AIR 1.1
      *  @productversion Flex 3
      */
-    public function PNGEncoder()
+    public function PNGThreadedEncoder()
     {
     	super();
-
+		
 		initializeCRCTable();
 	}
 
@@ -74,7 +81,22 @@ public class PNGEncoder implements IImageEncoder
 	 *  at the end of each chunk.
      */
     private var crcTable:Array;
-    
+	
+	private var loopTimer:Timer;
+	private var loopFrameRate:int = 30;
+	private var loopAffinity:Number = 0.85;
+	
+	private var encodefile:String;
+	private var bitmapDataToEncode:BitmapData;
+	private var byteArrayToEncode:ByteArray;
+	private var width:int = 0;
+	private var height:int = 0;
+	private var transparent:Boolean = true;
+	private var IHDR:ByteArray;
+	private var IDAT:ByteArray;
+	private var row:int = 0;
+	private var pngdata:ByteArray;
+	
 	//--------------------------------------------------------------------------
 	//
 	//  Properties
@@ -98,6 +120,8 @@ public class PNGEncoder implements IImageEncoder
     {
         return CONTENT_TYPE;
     }
+	
+	
 
 	//--------------------------------------------------------------------------
 	//
@@ -118,10 +142,14 @@ public class PNGEncoder implements IImageEncoder
      *  @playerversion AIR 1.1
      *  @productversion Flex 3
      */
-    public function encode(bitmapData:BitmapData):ByteArray
+    public function encode(bitmapData:BitmapData):void
     {
-        return internalEncode(bitmapData, bitmapData.width, bitmapData.height,
-							  bitmapData.transparent);
+		bitmapDataToEncode = bitmapData;
+		width = bitmapData.width;
+		height = bitmapData.height;
+		transparent = bitmapData.transparent;
+		
+		dispatchEvent(new Event(ThreadedEncoderEvent.START_ENCODE));
     }
 
     /**
@@ -154,9 +182,16 @@ public class PNGEncoder implements IImageEncoder
      *  @productversion Flex 3
      */
     public function encodeByteArray(byteArray:ByteArray, width:int, height:int,
-									transparent:Boolean = true):ByteArray
+									transparent:Boolean = true):void
     {
-        return internalEncode(byteArray, width, height, transparent);
+		byteArrayToEncode = byteArray;
+		width = width;
+		height = height;
+		transparent = transparent;
+		
+		byteArray.position = 0;
+		
+		dispatchEvent(new Event(ThreadedEncoderEvent.START_ENCODE));
     }
 
     /**
@@ -164,7 +199,7 @@ public class PNGEncoder implements IImageEncoder
 	 */
 	private function initializeCRCTable():void
 	{
-        crcTable = [];
+		crcTable = [];
 
         for (var n:uint = 0; n < 256; n++)
         {
@@ -179,29 +214,18 @@ public class PNGEncoder implements IImageEncoder
             crcTable[n] = c;
         }
 	}
-
-    /**
-	 *  @private
-	 */
-	private function internalEncode(source:Object, width:int, height:int,
-									transparent:Boolean = true):ByteArray
-    {
-     	// The source is either a BitmapData or a ByteArray.
-    	var sourceBitmapData:BitmapData = source as BitmapData;
-    	var sourceByteArray:ByteArray = source as ByteArray;
-    	
-    	if (sourceByteArray)
-    		sourceByteArray.position = 0;
-    	
-        // Create output byte array
-        var png:ByteArray = new ByteArray();
+	
+	public function writeHeader(e:Event = null):void
+	{
+		// Create output byte array
+        pngdata = new ByteArray();
 
         // Write PNG signature
-        png.writeUnsignedInt(0x89504E47);
-        png.writeUnsignedInt(0x0D0A1A0A);
+        pngdata.writeUnsignedInt(0x89504E47);
+        pngdata.writeUnsignedInt(0x0D0A1A0A);
 
         // Build IHDR chunk
-        var IHDR:ByteArray = new ByteArray();
+        IHDR = new ByteArray();
         IHDR.writeInt(width);
         IHDR.writeInt(height);
 		IHDR.writeByte(8); // bit depth per channel
@@ -209,53 +233,101 @@ public class PNGEncoder implements IImageEncoder
 		IHDR.writeByte(0); // compression method
 		IHDR.writeByte(0); // filter method
         IHDR.writeByte(0); // interlace method
-        writeChunk(png, 0x49484452, IHDR);
+        writeChunk(pngdata, 0x49484452, IHDR);
+		
+		dispatchEvent(new Event(ThreadedEncoderEvent.HEADER_WRITTEN));
+	}
+	
+	public function writeDataLoop(e:Event = null):void
+	{
+		// Set a timer such that the write loop runs as long as a frame at the given
+		// frame rate, accounting for the fact that 20 milliseconds is the shortest
+		// safe timer frequency
+		loopTimer = new Timer(Math.max(20, 1000 / loopFrameRate), loopFrameRate);
+		loopTimer.addEventListener(TimerEvent.TIMER, writeDataChunk);
+		loopTimer.addEventListener(TimerEvent.TIMER_COMPLETE, endWriteDataLoopEventHandler);
+		loopTimer.start();
+	}
+    private function writeDataChunk(e:Event = null):void
+	{
+		var startTime:int = getTimer();
+		var endTime:int = startTime;
+		
+		if (row >= height) {
+			loopTimer.removeEventListener(TimerEvent.TIMER, writeDataChunk);
+			loopTimer.removeEventListener(TimerEvent.TIMER_COMPLETE, endWriteDataLoopEventHandler);
+			loopTimer.stop();
+			loopTimer = null;
+			var compressStartTime:int = getTimer();
+			IDAT.compress();
+			writeChunk(pngdata, 0x49444154, IDAT);
+			var compressEndTime:int = getTimer();
+			trace("Compression took " + ((compressEndTime-compressStartTime) / 1000).toString() + " seconds.");
+			dispatchEvent(new Event(ThreadedEncoderEvent.COMPLETE_DATA_WRITTEN));
+		} else {
+			// Run the loop while the number of milliseconds is less than a frame, accounting for the requested CPU idle
+			while(((endTime-startTime) < ((1000 / loopFrameRate) * (loopAffinity / 100)))) {
+				if (row <= 0) {
+					// Prepare the IDAT chunk for writing
+					IDAT = new ByteArray();
+				}
+				
+				IDAT.writeByte(0); // no filter
+				
+				var x:int;
+				var pixel:uint;
+				
+				if (!transparent)
+				{
+					for (x = 0; x < width; x++)
+					{
+						if (bitmapDataToEncode)
+							pixel = bitmapDataToEncode.getPixel(x, row);
+						else
+							pixel = byteArrayToEncode.readUnsignedInt();
 
-        // Build IDAT chunk
-        var IDAT:ByteArray = new ByteArray();
-        for (var y:int = 0; y < height; y++)
-        {
-            IDAT.writeByte(0); // no filter
+						IDAT.writeUnsignedInt(uint(((pixel & 0xFFFFFF) << 8) | 0xFF));
+					}
+				}
+				else
+				{
+					for (x = 0; x < width; x++)
+					{
+						if (bitmapDataToEncode)
+							pixel = bitmapDataToEncode.getPixel32(x, row);
+						else
+							pixel = byteArrayToEncode.readUnsignedInt();
 
-            var x:int;
-            var pixel:uint;
-            
-			if (!transparent)
-            {
-                for (x = 0; x < width; x++)
-                {
-                    if (sourceBitmapData)
-                    	pixel = sourceBitmapData.getPixel(x, y);
-                   	else
-             			pixel = sourceByteArray.readUnsignedInt();
-					
-					IDAT.writeUnsignedInt(uint(((pixel & 0xFFFFFF) << 8) | 0xFF));
-                }
-            }
-            else
-            {
-                for (x = 0; x < width; x++)
-                {
-                    if (sourceBitmapData)
-                   		pixel = sourceBitmapData.getPixel32(x, y);
-                    else
-						pixel = sourceByteArray.readUnsignedInt();
- 
-                    IDAT.writeUnsignedInt(uint(((pixel & 0xFFFFFF) << 8) |
-												(pixel >>> 24)));
-                }
-            }
-        }
-        IDAT.compress();
-        writeChunk(png, 0x49444154, IDAT);
-
-        // Build IEND chunk
-        writeChunk(png, 0x49454E44, null);
+						IDAT.writeUnsignedInt(uint(((pixel & 0xFFFFFF) << 8) |
+													(pixel >>> 24)));
+					}
+				}
+				row++;
+				if (row >= height) {
+					break;
+				}
+				
+				endTime += (getTimer()-endTime);
+			}
+		}
+    }
+	private function endWriteDataLoopEventHandler(e:TimerEvent = null):void {
+		loopTimer.stop();
+		dispatchEvent(new Event(ThreadedEncoderEvent.DATA_CHUNK_WRITTEN));
+	}
+	
+	public function writeFooter(e:Event = null):void
+	{
+		// Build IEND chunk
+        writeChunk(pngdata, 0x49454E44, null);
 
         // return PNG
-        png.position = 0;
-        return png;
-    }
+        pngdata.position = 0;
+		
+		dispatchEvent(new Event(ThreadedEncoderEvent.FOOTER_WRITTEN));
+	}
+	
+	
 
     /**
 	 *  @private
@@ -289,6 +361,72 @@ public class PNGEncoder implements IImageEncoder
         png.position = crcPos;
         png.writeUnsignedInt(crc);
     }
+	
+	public function getEncodedImage():ByteArray
+	{
+		return pngdata;
+	}
+	
+	public function setFilePath(file:String):void
+	{
+		encodefile = file;
+	}
+	
+	public function getFilePath():String
+	{
+		return encodefile;
+	}
+	
+	public function saveToFile(e:Event = null):Boolean
+	{
+		try {
+			var out:File = new File(encodefile);
+			var fs:FileStream = new FileStream();
+			fs.open(out, FileMode.WRITE);
+			fs.writeBytes(pngdata);
+			fs.close();
+		} catch (e:Error) {
+			trace(e.message);
+			return false;
+		}
+		
+		dispatchEvent(new Event(ThreadedEncoderEvent.ENCODE_COMPLETE));
+		return true;
+	}
+	
+	
+	
+	public function setFrameRate(value:int):void
+	{
+		loopFrameRate = Math.round(Math.max(0,Math.min(value,60))) as int;
+	}
+	
+	public function getFrameRate():int
+	{
+		return loopFrameRate;
+	}
+	
+	public function setAffinity(value:Number):void
+	{
+		loopAffinity = Math.max(0,Math.min(value,100));
+	}
+	
+	public function getAffinity():Number
+	{
+		return loopAffinity;
+	}
+	
+	
+	
+	public function stop():void
+	{
+		if(loopTimer) {
+			loopTimer.removeEventListener(TimerEvent.TIMER, writeDataChunk);
+			loopTimer.removeEventListener(TimerEvent.TIMER_COMPLETE, endWriteDataLoopEventHandler);
+			loopTimer.stop();
+		}
+		dispatchEvent(new Event(ThreadedEncoderEvent.ENCODE_CANCELLED));
+	}
 }
 
 }

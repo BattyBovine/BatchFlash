@@ -28,9 +28,7 @@
 	
 	<fx:Script>
 		<![CDATA[
-			import com.battybovine.codec.JPEGEncoder;
-			import com.battybovine.codec.PNGEncoder;
-			import com.battybovine.codec.TGAEncoder;
+			import com.battybovine.codec.*;
 			import com.battybovine.RenderWindow.SwfData;
 			
 			import flash.display.Bitmap;
@@ -39,6 +37,7 @@
 			import flash.display.MovieClip;
 			import flash.events.Event;
 			import flash.filesystem.File;
+			import flash.filesystem.FileStream;
 			import flash.media.SoundTransform;
 			import flash.net.URLRequest;
 			import flash.utils.Timer;
@@ -46,17 +45,20 @@
 			import mx.controls.Alert;
 			import mx.controls.SWFLoader;
 			import mx.events.CloseEvent;
-			import mx.graphics.codec.IImageEncoder;
 			import mx.managers.PopUpManager;
 			
 			
 			
-			public static const QUEUE_RECEIVED:String = "QueueReceived";
-			public static const INIT_COMPLETE:String = "InitialisationComplete";
-			public static const QUEUE_PROCESSED:String = "QueueProcessed";
-			public static const RENDER_PREPARATION_COMPLETE:String = "RenderPreparationComplete";
-			public static const FRAME_RENDERED:String = "FrameRendered";
-			public static const RENDER_COMPLETE:String = "RenderComplete";
+			private static const QUEUE_RECEIVED:String = "QueueReceived";
+			private static const INIT_COMPLETE:String = "InitialisationComplete";
+			private static const QUEUE_PROCESSED:String = "QueueProcessed";
+			private static const RENDER_PREPARATION_COMPLETE:String = "RenderPreparationComplete";
+			private static const NEXT_FILE_OPENED:String = "NextFileOpened"
+			private static const PREVIEW_UPDATED:String = "PreviewUpdated";
+			private static const RENDER_NEXT_FRAME:String = "RenderNextFrame";
+			private static const RENDER_COMPLETE:String = "RenderComplete";
+			private static const RENDER_CANCELLED:String = "RenderCancelled";
+			private static const ALL_RENDERS_CANCELLED:String = "AllRendersCancelled";
 			
 			
 			
@@ -68,15 +70,23 @@
 			private var filequeue:Array = null;
 			private var renderswf:MovieClip = new MovieClip();
 			
+			private var imageencoder:IThreadedImageEncoder = null;
+			
 			
 			
 			// Add a timer to check for the list of files
 			private function openEvent():void {
+				// Set up all of our event listeners
 				this.addEventListener(RenderWindow.QUEUE_RECEIVED, startRender);
 				this.addEventListener(RenderWindow.INIT_COMPLETE, openSwfData);
-				this.addEventListener(RenderWindow.QUEUE_PROCESSED, prepareForRender);
-				this.addEventListener(RenderWindow.RENDER_PREPARATION_COMPLETE, renderNextFile);
-				this.addEventListener(RenderWindow.RENDER_COMPLETE, startNewRender);
+				this.addEventListener(RenderWindow.QUEUE_PROCESSED, handleEvents);
+				this.addEventListener(RenderWindow.RENDER_PREPARATION_COMPLETE, handleEvents);
+				this.addEventListener(RenderWindow.NEXT_FILE_OPENED, handleEvents);
+				this.addEventListener(RenderWindow.PREVIEW_UPDATED, handleEvents);
+				this.addEventListener(RenderWindow.RENDER_NEXT_FRAME, handleEvents);
+				this.addEventListener(RenderWindow.RENDER_COMPLETE, handleEvents);
+				this.addEventListener(RenderWindow.RENDER_CANCELLED, handleEvents);
+				this.addEventListener(RenderWindow.ALL_RENDERS_CANCELLED, handleEvents);
 			}
 			
 			// Get the list of files from the main application window
@@ -152,6 +162,8 @@
 			
 			// Start preparing for the render process
 			private function prepareForRender(e:Event = null):void {
+				this.removeEventListener(Event.EXIT_FRAME, prepareForRender);
+				
 				// Collect the total number of frames in each loaded SWF
 				var totalframes:int = 0;
 				for each(var data:SwfData in filequeue) {
@@ -174,6 +186,8 @@
 			
 			// Begin the rendering process for all files
 			private function renderNextFile(e:Event = null):void {
+				this.removeEventListener(Event.EXIT_FRAME, renderNextFile);
+				
 				// Load the first file in the queue as our next file to render
 				var loader:Loader = new Loader();
 				loader.contentLoaderInfo.addEventListener(Event.COMPLETE, renderSwfOpen);
@@ -190,9 +204,6 @@
 				// Initialise the SWF controller and prepare event listeners
 				renderswf = e.currentTarget.content as MovieClip;
 				renderswf.soundTransform = new SoundTransform(0,0);
-				renderswf.addEventListener(Event.FRAME_CONSTRUCTED, updateCapturedImage);
-				renderswf.addEventListener(Event.FRAME_CONSTRUCTED, renderSWFFrame);
-				this.addEventListener(FRAME_RENDERED, prepareNextFrame);
 				renderswf.gotoAndStop(1);
 				
 				// Configure the progress bar appropriately
@@ -204,13 +215,19 @@
 			
 				// Enable the Cancel Current button
 				cancelCurrent.enabled = true;
+				
+				this.dispatchEvent(new Event(NEXT_FILE_OPENED));
 			}
 			// Function for generating the preview image
 			private function updateCapturedImage(e:Event = null):void {
+				this.removeEventListener(Event.EXIT_FRAME, updateCapturedImage);
 				previewImage.source = captureSWFFrame(loadedSWF, previewImage.width, previewImage.height, prefsman.getAspect());
+				this.dispatchEvent(new Event(PREVIEW_UPDATED));
 			}
 			// Start rendering the current frame
 			private function renderSWFFrame(e:Event = null):void {
+				this.removeEventListener(Event.EXIT_FRAME, renderSWFFrame);
+				
 				// Create the render directory
 				var renderfile:File = new File(filequeue[0].file);
 				var outdirfull:File = new File(prefsman.getOutputDirectory()+File.separator+renderfile.name.replace("."+renderfile.extension,""));
@@ -218,9 +235,6 @@
 				
 				// Capture the current loaded SWF frame
 				saveImageToDisk(captureSWFFrame(loadedSWF, prefsman.getOutputWidth(), prefsman.getOutputHeight(), prefsman.getAspect()), outdirfull.nativePath, renderfile.name.replace("." + renderfile.extension, ""), (prefsman.getOutputFormat() == 1)?"jpg":"png", prefsman.getOutputQuality());
-				
-				// Start getting ready for the next frame
-				this.dispatchEvent(new Event(FRAME_RENDERED));
 			}
 			// Save the captured image to disk using the given format/quality settings
 			private function saveImageToDisk(bm:Bitmap, folder:String, filename:String = "out", ext:String = "png", jpegquality:int = 80):void {
@@ -232,60 +246,121 @@
 				
 				// Save the image
 				var savename:String = filename + "." + framepad + "." + ext;
-				var out:File = new File(folder+File.separator+savename);
 				trace("Outputting " + bm.width + "×" + bm.height + " frame capture to " + folder+File.separator+savename + "...");
 				var fs:FileStream = new FileStream();
 				try {
-					fs.open(out, FileMode.WRITE);
-					var encoder:IImageEncoder = null;
 					switch(ext) {
 						case "png":
-							encoder = new PNGEncoder();
+							imageencoder = new PNGThreadedEncoder();
 							break;
 						case "jpg":
 						case "jpeg":
-							encoder = new JPEGEncoder(jpegquality);
+							imageencoder = new JPEGThreadedEncoder(jpegquality);
 							break;
 						case "tga":
-							encoder = new TGAEncoder();
+							imageencoder = new TGAThreadedEncoder();
 							break;
 						default:
 							trace("Can't find an appropriate image encoder; defaulting to PNG");
-							encoder = new PNGEncoder();
+							imageencoder = new PNGThreadedEncoder();
 					}
-					fs.writeBytes(encoder.encode(bm.bitmapData));
-					fs.close();
-					trace(out.nativePath + " saved successfully!");
+					// Prepare the encoding thread's events
+					imageencoder.setFilePath(folder + File.separator + savename);
+					imageencoder.addEventListener(ThreadedEncoderEvent.START_ENCODE, handleEvents);
+					imageencoder.addEventListener(ThreadedEncoderEvent.HEADER_WRITTEN, handleEvents);
+					imageencoder.addEventListener(ThreadedEncoderEvent.DATA_CHUNK_WRITTEN, handleEvents);
+					imageencoder.addEventListener(ThreadedEncoderEvent.COMPLETE_DATA_WRITTEN, handleEvents);
+					imageencoder.addEventListener(ThreadedEncoderEvent.FOOTER_WRITTEN, handleEvents);
+					imageencoder.addEventListener(ThreadedEncoderEvent.ENCODE_COMPLETE, handleEvents);
+					imageencoder.addEventListener(ThreadedEncoderEvent.ENCODE_CANCELLED, handleEvents);
+					imageencoder.encode(bm.bitmapData);
 				} catch (e:Error) {
 					trace(e.message);
 				}
 			}
+			private function handleEvents(e:Event):void {
+				switch(e.type) {
+					case QUEUE_PROCESSED:
+						this.addEventListener(Event.EXIT_FRAME, prepareForRender);
+						break;
+					case RENDER_PREPARATION_COMPLETE:
+						this.addEventListener(Event.EXIT_FRAME, renderNextFile);
+						break;
+					case NEXT_FILE_OPENED:
+					case RENDER_NEXT_FRAME:
+						this.addEventListener(Event.EXIT_FRAME, updateCapturedImage);
+						break;
+					case PREVIEW_UPDATED:
+						this.addEventListener(Event.EXIT_FRAME, renderSWFFrame);
+						break;
+					case RENDER_CANCELLED:
+					case RENDER_COMPLETE:
+						this.addEventListener(Event.EXIT_FRAME, cleanUpCurrentRender);
+						break;
+					case ALL_RENDERS_CANCELLED:
+						this.cancelAllRenders();
+						break;
+					
+					case ThreadedEncoderEvent.START_ENCODE:
+						this.addEventListener(Event.EXIT_FRAME, imageencoder.writeHeader);
+						break;
+					case ThreadedEncoderEvent.HEADER_WRITTEN:
+						this.removeEventListener(Event.EXIT_FRAME, imageencoder.writeHeader);
+					case ThreadedEncoderEvent.DATA_CHUNK_WRITTEN:
+						callLater(imageencoder.writeDataLoop);
+						break;
+					case ThreadedEncoderEvent.COMPLETE_DATA_WRITTEN:
+						this.removeEventListener(Event.EXIT_FRAME, imageencoder.writeDataLoop);
+						this.addEventListener(Event.EXIT_FRAME, imageencoder.writeFooter);
+						break;
+					case ThreadedEncoderEvent.FOOTER_WRITTEN:
+						this.removeEventListener(Event.EXIT_FRAME, imageencoder.writeFooter);
+						this.addEventListener(Event.EXIT_FRAME, imageencoder.saveToFile);
+						break;
+					case ThreadedEncoderEvent.ENCODE_COMPLETE:
+						this.removeEventListener(Event.EXIT_FRAME, imageencoder.saveToFile);
+						this.addEventListener(Event.EXIT_FRAME, prepareNextFrame);
+						break;
+					case ThreadedEncoderEvent.ENCODE_CANCELLED:
+						//this.cancelCurrentRender();
+						break;
+					default:
+						trace("Not handling event " + e.type);
+				}
+			}
 			// Update the progress bars and increment the current frame
 			private function prepareNextFrame(e:Event = null):void {
+				this.removeEventListener(Event.EXIT_FRAME, prepareNextFrame);
+				
 				// Only continue if we haven't exhausted all frames in the SWF file
 				progressBarCurrent.setProgress(renderswf.currentFrame, progressBarCurrent.maximum);
 				progressBarTotal.setProgress(progressBarTotal.value + 1, progressBarTotal.maximum);
 				if ((renderswf.currentFrame) < renderswf.totalFrames) {
 					renderswf.gotoAndStop(renderswf.currentFrame + 1);
+					this.dispatchEvent(new Event(RENDER_NEXT_FRAME));
 				} else {
 					this.dispatchEvent(new Event(RENDER_COMPLETE));
 				}
 			}
-			private function startNewRender(e:Event = null):void {
+			private function cleanUpCurrentRender(e:Event = null):void {
+				this.removeEventListener(Event.EXIT_FRAME, cleanUpCurrentRender);
+				
+				this.deleteImageEncoder();
+				
 				// Unregister everything
 				loadedSWF.unloadAndStop();
-				renderswf.removeEventListener(Event.FRAME_CONSTRUCTED, updateCapturedImage);
-				renderswf.removeEventListener(Event.FRAME_CONSTRUCTED, renderSWFFrame);
 				// Set the progress bars to the proper final values here
 				progressBarCurrent.setProgress(renderswf.totalFrames, progressBarCurrent.maximum);
 				progressBarTotal.setProgress(progressBarTotal.value + (renderswf.totalFrames - renderswf.currentFrame), progressBarTotal.maximum);
-				// Remove the first file in the queue, pushing the next file to the top
-				filequeue.shift();
-				// If there are new files, keep going; otherwise, quit
-				if(filequeue.length>0) {
-					this.dispatchEvent(new Event(RENDER_PREPARATION_COMPLETE));
-				} else {
-					this.closeEvent();
+				if(filequeue) {
+					// Remove the first file in the queue, pushing the next file to the top
+					filequeue.shift();
+					// If there are new files, keep going; otherwise, quit
+					if(filequeue.length>0) {
+						this.dispatchEvent(new Event(RENDER_PREPARATION_COMPLETE));
+					} else {
+						this.closeEvent();
+					}
 				}
 			}
 			
@@ -359,10 +434,10 @@
 			}
 			// If the user wishes to cancel the current job...
 			private function cancelCurrentConfirmationHandler(e:CloseEvent):void {
-				trace("The current render job has been cancelled.");
 				if(e.detail == Alert.YES) {
+					trace("The current render job has been cancelled.");
 					// ...start preparing the next loop iteration.
-					this.dispatchEvent(new Event(RENDER_COMPLETE));
+					this.dispatchEvent(new Event(RENDER_CANCELLED));
 				}
 			}
 			
@@ -376,12 +451,43 @@
 			private function cancelAllConfirmationHandler(e:CloseEvent):void {
 				if (e.detail == Alert.YES) {
 					trace("All render jobs have been cancelled.");
-					// ...remove the event listeners for the loop...
-					renderswf.removeEventListener(Event.FRAME_CONSTRUCTED, updateCapturedImage);
-					renderswf.removeEventListener(Event.FRAME_CONSTRUCTED, renderSWFFrame);
-					// ...and close the window.
-					closeEvent();
+					// ...cancel and close the window.
+					this.dispatchEvent(new Event(RENDER_CANCELLED));
+					this.dispatchEvent(new Event(ALL_RENDERS_CANCELLED));
 				}
+			}
+			
+			private function cancelAllRenders():void {
+				filequeue = null;
+				this.removeEventHandlers();
+				this.closeEvent();
+			}
+			private function cancelCurrentRender():void {
+				cleanUpCurrentRender();
+			}
+			private function deleteImageEncoder():void {
+				if (imageencoder) {
+					imageencoder.removeEventListener(ThreadedEncoderEvent.START_ENCODE, handleEvents);
+					imageencoder.removeEventListener(ThreadedEncoderEvent.HEADER_WRITTEN, handleEvents);
+					imageencoder.removeEventListener(ThreadedEncoderEvent.DATA_CHUNK_WRITTEN, handleEvents);
+					imageencoder.removeEventListener(ThreadedEncoderEvent.COMPLETE_DATA_WRITTEN, handleEvents);
+					imageencoder.removeEventListener(ThreadedEncoderEvent.FOOTER_WRITTEN, handleEvents);
+					imageencoder.removeEventListener(ThreadedEncoderEvent.ENCODE_COMPLETE, handleEvents);
+					imageencoder.removeEventListener(ThreadedEncoderEvent.ENCODE_CANCELLED, handleEvents);
+					imageencoder = null;
+				}
+			}
+			private function removeEventHandlers():void {
+				this.removeEventListener(RenderWindow.QUEUE_RECEIVED, startRender);
+				this.removeEventListener(RenderWindow.INIT_COMPLETE, openSwfData);
+				this.removeEventListener(RenderWindow.QUEUE_PROCESSED, handleEvents);
+				this.removeEventListener(RenderWindow.RENDER_PREPARATION_COMPLETE, handleEvents);
+				this.removeEventListener(RenderWindow.NEXT_FILE_OPENED, handleEvents);
+				this.removeEventListener(RenderWindow.PREVIEW_UPDATED, handleEvents);
+				this.removeEventListener(RenderWindow.RENDER_NEXT_FRAME, handleEvents);
+				this.removeEventListener(RenderWindow.RENDER_COMPLETE, handleEvents);
+				this.removeEventListener(RenderWindow.RENDER_CANCELLED, handleEvents);
+				this.removeEventListener(RenderWindow.ALL_RENDERS_CANCELLED, handleEvents);
 			}
 			
 			// Close the window

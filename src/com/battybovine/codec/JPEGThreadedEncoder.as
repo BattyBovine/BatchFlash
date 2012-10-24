@@ -12,9 +12,10 @@
 package com.battybovine.codec
 {
 
+import flash.events.Event;
 import flash.display.BitmapData;
+import flash.events.EventDispatcher;
 import flash.utils.ByteArray;
-import mx.graphics.codec.IImageEncoder;
 
 /**
  *  The JPEGEncoder class converts raw bitmap images into encoded
@@ -28,7 +29,7 @@ import mx.graphics.codec.IImageEncoder;
  *  @playerversion AIR 1.1
  *  @productversion Flex 3
  */
-public class JPEGEncoder implements IImageEncoder
+public class JPEGThreadedEncoder extends EventDispatcher implements IThreadedImageEncoder
 {
 	//--------------------------------------------------------------------------
 	//
@@ -40,6 +41,9 @@ public class JPEGEncoder implements IImageEncoder
      *  @private
      */
     private static const CONTENT_TYPE:String = "image/jpeg";
+	
+	private var loopFrameRate:int = 30;
+	private var loopAffinity:Number = 0.85;
 
 	//--------------------------------------------------------------------------
 	//
@@ -63,7 +67,7 @@ public class JPEGEncoder implements IImageEncoder
      *  @playerversion AIR 1.1
      *  @productversion Flex 3
      */
-    public function JPEGEncoder(quality:Number = 50.0)
+    public function JPEGThreadedEncoder(quality:Number = 80.0)
     {
     	super();
     	
@@ -343,10 +347,11 @@ public class JPEGEncoder implements IImageEncoder
      *  @playerversion AIR 1.1
      *  @productversion Flex 3
      */
-    public function encode(bitmapData:BitmapData):ByteArray
+    public function encode(bitmapData:BitmapData):void
     {
-        return internalEncode(bitmapData, bitmapData.width, bitmapData.height,
-							  bitmapData.transparent);
+        //return internalEncode(bitmapData, bitmapData.width, bitmapData.height,
+							  //bitmapData.transparent);
+		return;
     }
 
     /**
@@ -380,10 +385,26 @@ public class JPEGEncoder implements IImageEncoder
      *  @productversion Flex 3
      */
     public function encodeByteArray(byteArray:ByteArray, width:int, height:int,
-									transparent:Boolean = true):ByteArray
+									transparent:Boolean = true):void
     {
-        return internalEncode(byteArray, width, height, transparent);
+        //return internalEncode(byteArray, width, height, transparent);
+		return;
     }
+	
+	public function writeHeader(e:Event = null):void
+	{
+		return;
+	}
+	
+	public function writeDataLoop(e:Event = null):void
+	{
+		return;
+	}
+	
+	public function writeFooter(e:Event = null):void
+	{
+		return;
+	}
 
 	//--------------------------------------------------------------------------
 	//
@@ -1038,6 +1059,72 @@ public class JPEGEncoder implements IImageEncoder
         writeByte(0x3f);	// Se
         writeByte(0);		// Bf
     }
+	
+	public function getEncodedImage():ByteArray
+	{
+		//return jpgdata;
+		return null;
+	}
+	
+	public function setFilePath(file:String):void
+	{
+		//encodefile = dir;
+		return;
+	}
+	
+	public function getFilePath():String
+	{
+		//return encodefile;
+		return "";
+	}
+	
+	public function saveToFile(e:Event = null):Boolean
+	{
+		//try {
+			//var out:File = new File(encodefile);
+			//var fs:FileStream = new FileStream();
+			//fs.open(out, FileMode.WRITE);
+			//fs.writeBytes(pngdata);
+			//fs.close();
+		//} catch (e:Error) {
+			//trace(e.message);
+			//return false;
+		//}
+		//
+		//dispatchEvent(new ThreadedEncoderEvent(ThreadedEncoderEvent.ENCODE_COMPLETE));
+		//return true;
+		
+		return false;
+	}
+	
+	
+	
+	public function setFrameRate(value:int):void
+	{
+		loopFrameRate = Math.round(Math.max(0,Math.min(value,60))) as int;
+	}
+	
+	public function getFrameRate():int
+	{
+		return loopFrameRate;
+	}
+	
+	public function setAffinity(value:Number):void
+	{
+		loopAffinity = Math.max(0,Math.min(value,100));
+	}
+	
+	public function getAffinity():Number
+	{
+		return loopAffinity;
+	}
+	
+	
+	
+	public function stop():void
+	{
+		dispatchEvent(new Event(ThreadedEncoderEvent.ENCODE_CANCELLED));
+	}
 }
 
 }

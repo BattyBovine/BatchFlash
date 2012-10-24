@@ -24,8 +24,9 @@
 package com.battybovine.codec
 {
 
+import flash.events.Event;
+import flash.events.EventDispatcher;
 import flash.utils.Endian;
-import mx.graphics.codec.IImageEncoder;
 import flash.display.BitmapData;
 import flash.utils.ByteArray;
 
@@ -40,7 +41,7 @@ import flash.utils.ByteArray;
  *  @playerversion AIR 1.1
  *  @productversion Flex 3
  */
-public class TGAEncoder implements IImageEncoder
+public class TGAThreadedEncoder extends EventDispatcher implements IThreadedImageEncoder
 {
     //--------------------------------------------------------------------------
 	//
@@ -55,6 +56,8 @@ public class TGAEncoder implements IImageEncoder
     private static const CONTENT_TYPE:String = "image/x-tga";
 	
 	private var rleEncoding:Boolean;
+	private var loopFrameRate:int = 30;
+	private var loopAffinity:Number = 0.85;
 
 	//--------------------------------------------------------------------------
 	//
@@ -70,7 +73,7 @@ public class TGAEncoder implements IImageEncoder
      *  @playerversion AIR 1.1
      *  @productversion Flex 3
      */
-    public function TGAEncoder(rle:Boolean = false)
+    public function TGAThreadedEncoder(rle:Boolean = false)
     {
 		super();
 		
@@ -120,9 +123,10 @@ public class TGAEncoder implements IImageEncoder
      *  @playerversion AIR 1.1
      *  @productversion Flex 3
      */
-    public function encode(bitmapData:BitmapData):ByteArray
+    public function encode(bitmapData:BitmapData):void
     {
-        return internalEncode(bitmapData, bitmapData.width, bitmapData.height, bitmapData.transparent);
+        //return internalEncode(bitmapData, bitmapData.width, bitmapData.height, bitmapData.transparent);
+		return;
     }
 
     /**
@@ -154,10 +158,26 @@ public class TGAEncoder implements IImageEncoder
      *  @playerversion AIR 1.1
      *  @productversion Flex 3
      */
-    public function encodeByteArray(byteArray:ByteArray, width:int, height:int, transparent:Boolean = true):ByteArray
+    public function encodeByteArray(byteArray:ByteArray, width:int, height:int, transparent:Boolean = true):void
     {
-        return internalEncode(byteArray, width, height, transparent);
+        //return internalEncode(byteArray, width, height, transparent);
+		return;
     }
+	
+	public function writeHeader(e:Event = null):void
+	{
+		return;
+	}
+	
+	public function writeDataLoop(e:Event = null):void
+	{
+		return;
+	}
+	
+	public function writeFooter(e:Event = null):void
+	{
+		return;
+	}
 
     /**
 	 *  @private
@@ -279,6 +299,72 @@ public class TGAEncoder implements IImageEncoder
 		out.writeByte(rle.length & 0xFF);
 		out.writeBytes(rle);
 		return out;
+	}
+	
+	public function getEncodedImage():ByteArray
+	{
+		//return jpgdata;
+		return null;
+	}
+	
+	public function setFilePath(file:String):void
+	{
+		//encodefile = dir;
+		return;
+	}
+	
+	public function getFilePath():String
+	{
+		//return encodefile;
+		return "";
+	}
+	
+	public function saveToFile(e:Event = null):Boolean
+	{
+		//try {
+			//var out:File = new File(encodefile);
+			//var fs:FileStream = new FileStream();
+			//fs.open(out, FileMode.WRITE);
+			//fs.writeBytes(pngdata);
+			//fs.close();
+		//} catch (e:Error) {
+			//trace(e.message);
+			//return false;
+		//}
+		//
+		//dispatchEvent(new ThreadedEncoderEvent(ThreadedEncoderEvent.ENCODE_COMPLETE));
+		//return true;
+		
+		return false;
+	}
+	
+	
+	
+	public function setFrameRate(value:int):void
+	{
+		loopFrameRate = Math.round(Math.max(0,Math.min(value,60))) as int;
+	}
+	
+	public function getFrameRate():int
+	{
+		return loopFrameRate;
+	}
+	
+	public function setAffinity(value:Number):void
+	{
+		loopAffinity = Math.max(0,Math.min(value,100));
+	}
+	
+	public function getAffinity():Number
+	{
+		return loopAffinity;
+	}
+	
+	
+	
+	public function stop():void
+	{
+		dispatchEvent(new Event(ThreadedEncoderEvent.ENCODE_CANCELLED));
 	}
 }
 
