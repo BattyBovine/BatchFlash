@@ -24,7 +24,7 @@
                xmlns:s="library://ns.adobe.com/flex/spark" 
                xmlns:mx="library://ns.adobe.com/flex/mx"
 			   creationComplete="openEvent()"
-			   close="closeEvent()">
+			   close="cancelAllClicked()">
 	
 	<fx:Script>
 		<![CDATA[
@@ -58,7 +58,7 @@
 			private static const RENDER_NEXT_FRAME:String = "RenderNextFrame";
 			private static const RENDER_COMPLETE:String = "RenderComplete";
 			private static const RENDER_CANCELLED:String = "RenderCancelled";
-			private static const ALL_RENDERS_CANCELLED:String = "AllRendersCancelled";
+			private static const CANCEL_ALL_RENDERS:String = "AllRendersCancelled";
 			
 			
 			
@@ -86,7 +86,7 @@
 				this.addEventListener(RenderWindow.RENDER_NEXT_FRAME, handleEvents);
 				this.addEventListener(RenderWindow.RENDER_COMPLETE, handleEvents);
 				this.addEventListener(RenderWindow.RENDER_CANCELLED, handleEvents);
-				this.addEventListener(RenderWindow.ALL_RENDERS_CANCELLED, handleEvents);
+				this.addEventListener(RenderWindow.CANCEL_ALL_RENDERS, handleEvents);
 			}
 			
 			// Get the list of files from the main application window
@@ -278,6 +278,21 @@
 					trace(e.message);
 				}
 			}
+			private function saveToFile(e:Event):void {
+				try {
+					var out:File = new File(imageencoder.getFilePath());
+					var fs:FileStream = new FileStream();
+					fs.open(out, FileMode.WRITE);
+					fs.writeBytes(imageencoder.getEncodedImage());
+					fs.close();
+				} catch (e:Error) {
+					trace(e.message);
+					return;
+				}
+				
+				// We're done here
+				imageencoder.finish();
+			}
 			private function handleEvents(e:Event):void {
 				switch(e.type) {
 					case QUEUE_PROCESSED:
@@ -297,7 +312,7 @@
 					case RENDER_COMPLETE:
 						this.addEventListener(Event.EXIT_FRAME, cleanUpCurrentRender);
 						break;
-					case ALL_RENDERS_CANCELLED:
+					case CANCEL_ALL_RENDERS:
 						this.cancelAllRenders();
 						break;
 					
@@ -315,10 +330,10 @@
 						break;
 					case ThreadedEncoderEvent.FOOTER_WRITTEN:
 						this.removeEventListener(Event.EXIT_FRAME, imageencoder.writeFooter);
-						this.addEventListener(Event.EXIT_FRAME, imageencoder.saveToFile);
+						this.addEventListener(Event.EXIT_FRAME, this.saveToFile);
 						break;
 					case ThreadedEncoderEvent.ENCODE_COMPLETE:
-						this.removeEventListener(Event.EXIT_FRAME, imageencoder.saveToFile);
+						this.removeEventListener(Event.EXIT_FRAME, this.saveToFile);
 						this.addEventListener(Event.EXIT_FRAME, prepareNextFrame);
 						break;
 					case ThreadedEncoderEvent.ENCODE_CANCELLED:
@@ -345,6 +360,7 @@
 			private function cleanUpCurrentRender(e:Event = null):void {
 				this.removeEventListener(Event.EXIT_FRAME, cleanUpCurrentRender);
 				
+				// Make sure the image encoder object is cleaned up properly
 				this.deleteImageEncoder();
 				
 				// Unregister everything
@@ -361,6 +377,8 @@
 					} else {
 						this.closeEvent();
 					}
+				} else {
+					this.closeEvent();
 				}
 			}
 			
@@ -451,16 +469,14 @@
 			private function cancelAllConfirmationHandler(e:CloseEvent):void {
 				if (e.detail == Alert.YES) {
 					trace("All render jobs have been cancelled.");
-					// ...cancel and close the window.
+					// ...empty the file queue and shut down the window.
+					filequeue = null;
 					this.dispatchEvent(new Event(RENDER_CANCELLED));
-					this.dispatchEvent(new Event(ALL_RENDERS_CANCELLED));
 				}
 			}
 			
 			private function cancelAllRenders():void {
-				filequeue = null;
 				this.removeEventHandlers();
-				this.closeEvent();
 			}
 			private function cancelCurrentRender():void {
 				cleanUpCurrentRender();
@@ -487,13 +503,14 @@
 				this.removeEventListener(RenderWindow.RENDER_NEXT_FRAME, handleEvents);
 				this.removeEventListener(RenderWindow.RENDER_COMPLETE, handleEvents);
 				this.removeEventListener(RenderWindow.RENDER_CANCELLED, handleEvents);
-				this.removeEventListener(RenderWindow.ALL_RENDERS_CANCELLED, handleEvents);
+				this.removeEventListener(RenderWindow.CANCEL_ALL_RENDERS, handleEvents);
 			}
 			
 			// Close the window
 			private function closeEvent():void {
 				trace("Closing Render Dialogue window");
 				
+				this.dispatchEvent(new Event(CANCEL_ALL_RENDERS));
 				PopUpManager.removePopUp(this);
 			}
 		]]>

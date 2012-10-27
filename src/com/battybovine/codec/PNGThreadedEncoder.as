@@ -93,7 +93,7 @@ public class PNGThreadedEncoder extends EventDispatcher implements IThreadedImag
 	private var height:int = 0;
 	private var transparent:Boolean = true;
 	private var IHDR:ByteArray;
-	private var IDAT:ByteArray;
+	private var IDAT:ByteArray = new ByteArray();
 	private var row:int = 0;
 	private var pngdata:ByteArray;
 	
@@ -189,7 +189,7 @@ public class PNGThreadedEncoder extends EventDispatcher implements IThreadedImag
 		height = height;
 		transparent = transparent;
 		
-		byteArray.position = 0;
+		byteArrayToEncode.position = 0;
 		
 		dispatchEvent(new Event(ThreadedEncoderEvent.START_ENCODE));
     }
@@ -254,24 +254,23 @@ public class PNGThreadedEncoder extends EventDispatcher implements IThreadedImag
 		var endTime:int = startTime;
 		
 		if (row >= height) {
-			loopTimer.removeEventListener(TimerEvent.TIMER, writeDataChunk);
-			loopTimer.removeEventListener(TimerEvent.TIMER_COMPLETE, endWriteDataLoopEventHandler);
-			loopTimer.stop();
-			loopTimer = null;
+			if(loopTimer) {
+				loopTimer.removeEventListener(TimerEvent.TIMER, writeDataChunk);
+				loopTimer.removeEventListener(TimerEvent.TIMER_COMPLETE, endWriteDataLoopEventHandler);
+				loopTimer.stop();
+				loopTimer = null;
+			}
+			
 			var compressStartTime:int = getTimer();
 			IDAT.compress();
 			writeChunk(pngdata, 0x49444154, IDAT);
 			var compressEndTime:int = getTimer();
 			trace("Compression took " + ((compressEndTime-compressStartTime) / 1000).toString() + " seconds.");
+			
 			dispatchEvent(new Event(ThreadedEncoderEvent.COMPLETE_DATA_WRITTEN));
 		} else {
 			// Run the loop while the number of milliseconds is less than a frame, accounting for the requested CPU idle
 			while(((endTime-startTime) < ((1000 / loopFrameRate) * (loopAffinity / 100)))) {
-				if (row <= 0) {
-					// Prepare the IDAT chunk for writing
-					IDAT = new ByteArray();
-				}
-				
 				IDAT.writeByte(0); // no filter
 				
 				var x:int;
@@ -312,7 +311,12 @@ public class PNGThreadedEncoder extends EventDispatcher implements IThreadedImag
 		}
     }
 	private function endWriteDataLoopEventHandler(e:TimerEvent = null):void {
-		loopTimer.stop();
+		if(loopTimer) {
+			loopTimer.removeEventListener(TimerEvent.TIMER, writeDataChunk);
+			loopTimer.removeEventListener(TimerEvent.TIMER_COMPLETE, endWriteDataLoopEventHandler);
+			loopTimer.stop();
+			loopTimer = null;
+		}
 		dispatchEvent(new Event(ThreadedEncoderEvent.DATA_CHUNK_WRITTEN));
 	}
 	
@@ -377,23 +381,6 @@ public class PNGThreadedEncoder extends EventDispatcher implements IThreadedImag
 		return encodefile;
 	}
 	
-	public function saveToFile(e:Event = null):Boolean
-	{
-		try {
-			var out:File = new File(encodefile);
-			var fs:FileStream = new FileStream();
-			fs.open(out, FileMode.WRITE);
-			fs.writeBytes(pngdata);
-			fs.close();
-		} catch (e:Error) {
-			trace(e.message);
-			return false;
-		}
-		
-		dispatchEvent(new Event(ThreadedEncoderEvent.ENCODE_COMPLETE));
-		return true;
-	}
-	
 	
 	
 	public function setFrameRate(value:int):void
@@ -418,6 +405,10 @@ public class PNGThreadedEncoder extends EventDispatcher implements IThreadedImag
 	
 	
 	
+	public function finish():void
+	{
+		dispatchEvent(new Event(ThreadedEncoderEvent.ENCODE_COMPLETE));
+	}
 	public function stop():void
 	{
 		if(loopTimer) {

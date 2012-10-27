@@ -15,7 +15,10 @@ package com.battybovine.codec
 import flash.events.Event;
 import flash.display.BitmapData;
 import flash.events.EventDispatcher;
+import flash.events.TimerEvent;
 import flash.utils.ByteArray;
+import flash.utils.getTimer;
+import flash.utils.Timer;
 
 /**
  *  The JPEGEncoder class converts raw bitmap images into encoded
@@ -41,9 +44,6 @@ public class JPEGThreadedEncoder extends EventDispatcher implements IThreadedIma
      *  @private
      */
     private static const CONTENT_TYPE:String = "image/jpeg";
-	
-	private var loopFrameRate:int = 30;
-	private var loopAffinity:Number = 0.85;
 
 	//--------------------------------------------------------------------------
 	//
@@ -303,6 +303,23 @@ public class JPEGThreadedEncoder extends EventDispatcher implements IThreadedIma
 	 *  @private
 	 */
 	private var VDU:Array = new Array(64);
+	
+	
+	
+	private var loopTimer:Timer;
+	private var loopFrameRate:int = 30;
+	private var loopAffinity:Number = 0.85;
+	
+	private var encodefile:String;
+	private var bitmapDataToEncode:BitmapData;
+	private var byteArrayToEncode:ByteArray;
+	private var width:int = 0;
+	private var height:int = 0;
+	private var row:int = 0;
+	
+	private var DCY:Number = 0;
+	private var DCU:Number = 0;
+	private var DCV:Number = 0;
 
 	//--------------------------------------------------------------------------
 	//
@@ -349,9 +366,11 @@ public class JPEGThreadedEncoder extends EventDispatcher implements IThreadedIma
      */
     public function encode(bitmapData:BitmapData):void
     {
-        //return internalEncode(bitmapData, bitmapData.width, bitmapData.height,
-							  //bitmapData.transparent);
-		return;
+		bitmapDataToEncode = bitmapData;
+		width = bitmapData.width;
+		height = bitmapData.height;
+		
+		dispatchEvent(new Event(ThreadedEncoderEvent.START_ENCODE));
     }
 
     /**
@@ -387,23 +406,105 @@ public class JPEGThreadedEncoder extends EventDispatcher implements IThreadedIma
     public function encodeByteArray(byteArray:ByteArray, width:int, height:int,
 									transparent:Boolean = true):void
     {
-        //return internalEncode(byteArray, width, height, transparent);
-		return;
+		byteArrayToEncode = byteArray;
+		width = width;
+		height = height;
+		
+		byteArrayToEncode.position = 0;
+		
+		dispatchEvent(new Event(ThreadedEncoderEvent.START_ENCODE));
     }
 	
 	public function writeHeader(e:Event = null):void
 	{
-		return;
+		// Initialize bit writer
+        byteout = new ByteArray();
+        bytenew = 0;
+        bytepos = 7;
+
+        // Add JPEG headers
+        writeWord(0xFFD8); // SOI
+        writeAPP0();
+        writeDQT();
+        writeSOF0(width, height);
+        writeDHT();
+        writeSOS();
+
+        // Encode 8x8 macroblocks
+        bytenew = 0;
+        bytepos = 7;
+		
+		dispatchEvent(new Event(ThreadedEncoderEvent.HEADER_WRITTEN));
 	}
 	
 	public function writeDataLoop(e:Event = null):void
 	{
-		return;
+		// Set a timer such that the write loop runs as long as a frame at the given
+		// frame rate, accounting for the fact that 20 milliseconds is the shortest
+		// safe timer frequency
+		loopTimer = new Timer(Math.max(20, 1000 / loopFrameRate), loopFrameRate);
+		loopTimer.addEventListener(TimerEvent.TIMER, writeDataChunk);
+		loopTimer.addEventListener(TimerEvent.TIMER_COMPLETE, endWriteDataLoopEventHandler);
+		loopTimer.start();
+	}
+	private function writeDataChunk(e:Event = null):void
+	{
+		var startTime:int = getTimer();
+		var endTime:int = startTime;
+		
+		if (row >= height) {
+			if(loopTimer) {
+				loopTimer.removeEventListener(TimerEvent.TIMER, writeDataChunk);
+				loopTimer.removeEventListener(TimerEvent.TIMER_COMPLETE, endWriteDataLoopEventHandler);
+				loopTimer.stop();
+				loopTimer = null;
+			}
+			
+			// Do the bit alignment of the EOI marker
+			if (bytepos >= 0)
+			{
+				var fillbits:BitString = new BitString();
+				fillbits.len = bytepos + 1;
+				fillbits.val = (1 << (bytepos + 1)) - 1;
+				writeBits(fillbits);
+			}
+		
+			dispatchEvent(new Event(ThreadedEncoderEvent.COMPLETE_DATA_WRITTEN));
+		} else {
+			// Run the loop while the number of milliseconds is less than a frame, accounting for the requested CPU idle
+			while(((endTime-startTime) < ((1000 / loopFrameRate) * (loopAffinity / 100)))) {
+				for (var xpos:int = 0; xpos < width; xpos += 8) {
+					RGB2YUV(bitmapDataToEncode, byteArrayToEncode, xpos, row, width, height);
+					
+					DCY = processDU(YDU, fdtbl_Y, DCY, YDC_HT, YAC_HT);
+					DCU = processDU(UDU, fdtbl_UV, DCU, UVDC_HT, UVAC_HT);
+					DCV = processDU(VDU, fdtbl_UV, DCV, UVDC_HT, UVAC_HT);
+				}
+				row += 8;
+				if (row >= height) {
+					break;
+				}
+				
+				endTime += (getTimer()-endTime);
+			}
+        }
+	}
+	private function endWriteDataLoopEventHandler(e:TimerEvent = null):void {
+		if(loopTimer) {
+			loopTimer.removeEventListener(TimerEvent.TIMER, writeDataChunk);
+			loopTimer.removeEventListener(TimerEvent.TIMER_COMPLETE, endWriteDataLoopEventHandler);
+			loopTimer.stop();
+			loopTimer = null;
+		}
+		dispatchEvent(new Event(ThreadedEncoderEvent.DATA_CHUNK_WRITTEN));
 	}
 	
 	public function writeFooter(e:Event = null):void
 	{
-		return;
+		// Add EOI
+		writeWord(0xFFD9);
+		
+        dispatchEvent(new Event(ThreadedEncoderEvent.FOOTER_WRITTEN));
 	}
 
 	//--------------------------------------------------------------------------
@@ -584,53 +685,6 @@ public class JPEGThreadedEncoder extends EventDispatcher implements IThreadedIma
 	private function internalEncode(source:Object, width:int, height:int,
 									transparent:Boolean = true):ByteArray
     {
-    	// The source is either a BitmapData or a ByteArray.
-    	var sourceBitmapData:BitmapData = source as BitmapData;
-    	var sourceByteArray:ByteArray = source as ByteArray;
-    	
-        // Initialize bit writer
-        byteout = new ByteArray();
-        bytenew = 0;
-        bytepos = 7;
-
-        // Add JPEG headers
-        writeWord(0xFFD8); // SOI
-        writeAPP0();
-        writeDQT();
-        writeSOF0(width, height);
-        writeDHT();
-        writeSOS();
-
-        // Encode 8x8 macroblocks
-        var DCY:Number = 0;
-        var DCU:Number = 0;
-        var DCV:Number = 0;
-        bytenew = 0;
-        bytepos = 7;
-
-        for (var ypos:int = 0; ypos < height; ypos += 8)
-        {
-            for (var xpos:int = 0; xpos < width; xpos += 8)
-            {
-                RGB2YUV(sourceBitmapData, sourceByteArray, xpos, ypos, width, height);
-                
-				DCY = processDU(YDU, fdtbl_Y, DCY, YDC_HT, YAC_HT);
-                DCU = processDU(UDU, fdtbl_UV, DCU, UVDC_HT, UVAC_HT);
-                DCV = processDU(VDU, fdtbl_UV, DCV, UVDC_HT, UVAC_HT);
-            }
-        }
-
-        // Do the bit alignment of the EOI marker
-        if (bytepos >= 0)
-        {
-            var fillbits:BitString = new BitString();
-            fillbits.len = bytepos + 1;
-            fillbits.val = (1 << (bytepos + 1)) - 1;
-            writeBits(fillbits);
-        }
-
-        // Add EOI
-		writeWord(0xFFD9);
         
 		return byteout;
     }
@@ -1062,39 +1116,17 @@ public class JPEGThreadedEncoder extends EventDispatcher implements IThreadedIma
 	
 	public function getEncodedImage():ByteArray
 	{
-		//return jpgdata;
-		return null;
+		return byteout;
 	}
 	
 	public function setFilePath(file:String):void
 	{
-		//encodefile = dir;
-		return;
+		encodefile = file;
 	}
 	
 	public function getFilePath():String
 	{
-		//return encodefile;
-		return "";
-	}
-	
-	public function saveToFile(e:Event = null):Boolean
-	{
-		//try {
-			//var out:File = new File(encodefile);
-			//var fs:FileStream = new FileStream();
-			//fs.open(out, FileMode.WRITE);
-			//fs.writeBytes(pngdata);
-			//fs.close();
-		//} catch (e:Error) {
-			//trace(e.message);
-			//return false;
-		//}
-		//
-		//dispatchEvent(new ThreadedEncoderEvent(ThreadedEncoderEvent.ENCODE_COMPLETE));
-		//return true;
-		
-		return false;
+		return encodefile;
 	}
 	
 	
@@ -1121,6 +1153,10 @@ public class JPEGThreadedEncoder extends EventDispatcher implements IThreadedIma
 	
 	
 	
+	public function finish():void
+	{
+		dispatchEvent(new Event(ThreadedEncoderEvent.ENCODE_COMPLETE));
+	}
 	public function stop():void
 	{
 		dispatchEvent(new Event(ThreadedEncoderEvent.ENCODE_CANCELLED));

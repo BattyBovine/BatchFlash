@@ -94,13 +94,13 @@ public interface IThreadedImageEncoder extends IEventDispatcher
 	
 	function setFilePath(file:String):void;
 	function getFilePath():String;
-	function saveToFile(e:Event = null):Boolean;
 	
 	function setFrameRate(value:int):void;
 	function getFrameRate():int;
 	function setAffinity(value:Number):void;
 	function getAffinity():Number;
 	
+	function finish():void;
 	function stop():void;
 }
 

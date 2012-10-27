@@ -362,6 +362,10 @@ public class TGAThreadedEncoder extends EventDispatcher implements IThreadedImag
 	
 	
 	
+	public function finish():void
+	{
+		dispatchEvent(new Event(ThreadedEncoderEvent.ENCODE_COMPLETE));
+	}
 	public function stop():void
 	{
 		dispatchEvent(new Event(ThreadedEncoderEvent.ENCODE_CANCELLED));
