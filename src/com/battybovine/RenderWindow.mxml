@@ -234,10 +234,10 @@
 				outdirfull.createDirectory();
 				
 				// Capture the current loaded SWF frame
-				saveImageToDisk(captureSWFFrame(loadedSWF, prefsman.getOutputWidth(), prefsman.getOutputHeight(), prefsman.getAspect()), outdirfull.nativePath, renderfile.name.replace("." + renderfile.extension, ""), (prefsman.getOutputFormat() == 1)?"jpg":"png", prefsman.getOutputQuality());
+				beginRenderToFile(captureSWFFrame(loadedSWF, prefsman.getOutputWidth(), prefsman.getOutputHeight(), prefsman.getAspect()), outdirfull.nativePath, renderfile.name.replace("." + renderfile.extension, ""), prefsman.getOutputFormat(), prefsman.getOutputQuality());
 			}
 			// Save the captured image to disk using the given format/quality settings
-			private function saveImageToDisk(bm:Bitmap, folder:String, filename:String = "out", ext:String = "png", jpegquality:int = 80):void {
+			private function beginRenderToFile(bm:Bitmap, folder:String, filename:String = "out", format:int = 0, jpegquality:int = 80):void {
 				// Find the number of digits in the frame count and pad the current frame to that length
 				var j:int = filequeue[0].numFrames;
 				for (var i:int = 1; j >= 10; i++ ) { j /= 10; }
@@ -245,9 +245,20 @@
 				while (framepad.length < i) { framepad = "0" + framepad; }
 				
 				// Save the image
+				var ext:String;
+				switch(format) {
+					default:
+						ext = "png";
+						break;
+					case 1:
+						ext = "jpg";
+						break;
+					case 2:
+						ext = "tga";
+						break;
+				}
 				var savename:String = filename + "." + framepad + "." + ext;
-				trace("Outputting " + bm.width + "×" + bm.height + " frame capture to " + folder+File.separator+savename + "...");
-				var fs:FileStream = new FileStream();
+				trace("Outputting " + bm.width + "×" + bm.height + " frame capture to " + folder + File.separator + savename + "...");
 				try {
 					switch(ext) {
 						case "png":

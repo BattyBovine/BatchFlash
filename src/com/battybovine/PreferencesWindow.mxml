@@ -270,7 +270,7 @@
 				<mx:ArrayCollection>
 					<fx:String>PNG</fx:String>
 					<fx:String>JPEG</fx:String>
-					<!--<fx:String>Targa</fx:String>-->
+					<fx:String>TARGA</fx:String>
 				</mx:ArrayCollection>
 			</mx:ComboBox>
 			<mx:Label id="outputqualitylabel" text="Quality:" enabled="false" />
