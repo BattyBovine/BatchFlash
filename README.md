@@ -7,7 +7,7 @@ Features:
 - Easily drag and drop SWF files into the program and render each one to a high-resolution image sequence with a single click.
 - Render settings that allow for various common resolution settings, as well as manual resolutions, plus the ability to scale or crop the image to fit new aspect ratios.
 - Preview how the output will look by scrubbing through your SWF files to view a sample render.
-- Uses a pseudo-threaded PNG encoder to create image sequences (JPEG and TARGA will be implemented soon). The processor affinity and minimum interface frame rate will soon be adjustable to allow a balance between render speed and interface responsiveness.
+- Uses pseudo-threaded PNG, JPEG and TARGA encoders to create image sequences. The processor affinity and minimum interface frame rate will soon be adjustable to allow a balance between render speed and interface responsiveness.
 
 Known Issues:
 - Letterbox aspect correction does not currently work properly.
