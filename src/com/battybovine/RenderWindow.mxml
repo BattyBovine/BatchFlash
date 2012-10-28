@@ -277,6 +277,8 @@
 					}
 					// Prepare the encoding thread's events
 					imageencoder.setFilePath(folder + File.separator + savename);
+					imageencoder.setFrameRate(1);
+					imageencoder.setAffinity(100);
 					imageencoder.addEventListener(ThreadedEncoderEvent.START_ENCODE, handleEvents);
 					imageencoder.addEventListener(ThreadedEncoderEvent.HEADER_WRITTEN, handleEvents);
 					imageencoder.addEventListener(ThreadedEncoderEvent.DATA_CHUNK_WRITTEN, handleEvents);

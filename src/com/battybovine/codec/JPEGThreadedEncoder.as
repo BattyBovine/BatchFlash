@@ -1143,7 +1143,7 @@ public class JPEGThreadedEncoder extends EventDispatcher implements IThreadedIma
 	
 	public function setAffinity(value:Number):void
 	{
-		loopAffinity = Math.max(0,Math.min(value,100));
+		loopAffinity = Math.max(1,Math.min(value,100));
 	}
 	
 	public function getAffinity():Number

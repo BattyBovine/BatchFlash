@@ -276,9 +276,9 @@ public class PNGThreadedEncoder extends EventDispatcher implements IThreadedImag
 				var x:int;
 				var pixel:uint;
 				
-				if (!transparent)
+				for (x = 0; x < width; x++)
 				{
-					for (x = 0; x < width; x++)
+					if (!transparent)
 					{
 						if (bitmapDataToEncode)
 							pixel = bitmapDataToEncode.getPixel(x, row);
@@ -287,10 +287,7 @@ public class PNGThreadedEncoder extends EventDispatcher implements IThreadedImag
 
 						IDAT.writeUnsignedInt(uint(((pixel & 0xFFFFFF) << 8) | 0xFF));
 					}
-				}
-				else
-				{
-					for (x = 0; x < width; x++)
+					else
 					{
 						if (bitmapDataToEncode)
 							pixel = bitmapDataToEncode.getPixel32(x, row);
@@ -395,7 +392,7 @@ public class PNGThreadedEncoder extends EventDispatcher implements IThreadedImag
 	
 	public function setAffinity(value:Number):void
 	{
-		loopAffinity = Math.max(0,Math.min(value,100));
+		loopAffinity = Math.max(1,Math.min(value,100));
 	}
 	
 	public function getAffinity():Number

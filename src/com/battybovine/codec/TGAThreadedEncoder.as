@@ -24,11 +24,14 @@
 package com.battybovine.codec
 {
 
+import flash.display.BitmapData;
 import flash.events.Event;
 import flash.events.EventDispatcher;
+import flash.events.TimerEvent;
 import flash.utils.Endian;
-import flash.display.BitmapData;
 import flash.utils.ByteArray;
+import flash.utils.Timer;
+import flash.utils.getTimer;
 
 /**
  *  The TGAEncoder class converts raw bitmap images into encoded
@@ -58,6 +61,18 @@ public class TGAThreadedEncoder extends EventDispatcher implements IThreadedImag
 	private var rleEncoding:Boolean;
 	private var loopFrameRate:int = 30;
 	private var loopAffinity:Number = 0.85;
+	
+	private var encodefile:String;
+	private var bitmapDataToEncode:BitmapData;
+	private var byteArrayToEncode:ByteArray;
+	private var width:int = 0;
+	private var height:int = 0;
+	private var transparent:Boolean = true;
+	private var imgdata:ByteArray;
+	private var tga:ByteArray;
+	
+	private var loopTimer:Timer;
+	private var row:int = 0;
 
 	//--------------------------------------------------------------------------
 	//
@@ -125,8 +140,12 @@ public class TGAThreadedEncoder extends EventDispatcher implements IThreadedImag
      */
     public function encode(bitmapData:BitmapData):void
     {
-        //return internalEncode(bitmapData, bitmapData.width, bitmapData.height, bitmapData.transparent);
-		return;
+        bitmapDataToEncode = bitmapData;
+		width = bitmapData.width;
+		height = bitmapData.height;
+		transparent = bitmapData.transparent;
+		
+		dispatchEvent(new Event(ThreadedEncoderEvent.START_ENCODE));
     }
 
     /**
@@ -160,70 +179,113 @@ public class TGAThreadedEncoder extends EventDispatcher implements IThreadedImag
      */
     public function encodeByteArray(byteArray:ByteArray, width:int, height:int, transparent:Boolean = true):void
     {
-        //return internalEncode(byteArray, width, height, transparent);
-		return;
+        byteArrayToEncode = byteArray;
+		width = width;
+		height = height;
+		transparent = transparent;
+		
+		byteArrayToEncode.position = 0;
+		
+		dispatchEvent(new Event(ThreadedEncoderEvent.START_ENCODE));
     }
 	
 	public function writeHeader(e:Event = null):void
 	{
-		return;
-	}
-	
-	public function writeDataLoop(e:Event = null):void
-	{
-		return;
-	}
-	
-	public function writeFooter(e:Event = null):void
-	{
-		return;
-	}
-
-    /**
-	 *  @private
-	 */
-	private function internalEncode(source:Object, width:int, height:int, transparent:Boolean = true):ByteArray
-    {
-     	// The source is either a BitmapData or a ByteArray.
-    	var sourceBitmapData:BitmapData = source as BitmapData;
-    	var sourceByteArray:ByteArray = source as ByteArray;
-    	
-    	if (sourceByteArray)	sourceByteArray.position = 0;
-    	
-        // Create output byte array
-        var tga:ByteArray = new ByteArray();
+		imgdata = new ByteArray();
+		imgdata.endian = Endian.LITTLE_ENDIAN;
+		
+     	// Create output byte array
+        tga = new ByteArray();
 
         // Write TGA header
         tga.writeBytes(createHeader(width, height));
 		
-		// Write TGA image data
-		var imgdata:ByteArray = new ByteArray();
-		imgdata.endian = Endian.LITTLE_ENDIAN;
-		var pixel:uint;
-		for (var y:int = height-1; y >= 0; y--) {
-			for (var x:int = 0; x < width; x++) {
-				if (sourceBitmapData)
-					pixel = sourceBitmapData.getPixel32(x, y);
-				else
-					pixel = sourceByteArray.readUnsignedInt();
+		row = height-1;
+		
+		dispatchEvent(new Event(ThreadedEncoderEvent.HEADER_WRITTEN));
+	}
+	
+	public function writeDataLoop(e:Event = null):void
+	{
+		// Set a timer such that the write loop runs as long as a frame at the given
+		// frame rate, accounting for the fact that 20 milliseconds is the shortest
+		// safe timer frequency
+		loopTimer = new Timer(Math.max(20, 1000 / loopFrameRate), loopFrameRate);
+		loopTimer.addEventListener(TimerEvent.TIMER, writeDataChunk);
+		loopTimer.addEventListener(TimerEvent.TIMER_COMPLETE, endWriteDataLoopEventHandler);
+		loopTimer.start();
+	}
+    public function writeDataChunk(e:Event = null):void
+	{
+		var startTime:int = getTimer();
+		var endTime:int = startTime;
+		
+		if (row < 0) {
+			if(loopTimer) {
+				loopTimer.removeEventListener(TimerEvent.TIMER, writeDataChunk);
+				loopTimer.removeEventListener(TimerEvent.TIMER_COMPLETE, endWriteDataLoopEventHandler);
+				loopTimer.stop();
+				loopTimer = null;
+			}
+			
+			if(rleEncoding) {
+				var compressStartTime:int = getTimer();
+				tga.writeBytes(runLengthEncoder(imgdata));
+				var compressEndTime:int = getTimer();
+				trace("Compression took " + ((compressEndTime-compressStartTime) / 1000).toString() + " seconds.");
+			} else {
+				tga.writeBytes(imgdata);
+			}
+			
+			dispatchEvent(new Event(ThreadedEncoderEvent.COMPLETE_DATA_WRITTEN));
+		} else {
+			// Run the loop while the number of milliseconds is less than a frame, accounting for the requested CPU idle
+			while(((endTime-startTime) < ((1000 / loopFrameRate) * (loopAffinity / 100)))) {
+				var pixel:uint;
+				for (var x:int = 0; x < width; x++) {
+					if (!transparent) {
+						if (bitmapDataToEncode)
+							pixel = bitmapDataToEncode.getPixel(x, row);
+						else
+							pixel = byteArrayToEncode.readUnsignedInt();
+					} else {
+						if (bitmapDataToEncode)
+							pixel = bitmapDataToEncode.getPixel32(x, row);
+						else
+							pixel = byteArrayToEncode.readUnsignedInt();
+					}
+					
+					imgdata.writeInt(pixel);
+				}
+				row--;
+				if (row < 0) {
+					break;
+				}
 				
-				imgdata.writeInt(pixel);
+				endTime += (getTimer()-endTime);
 			}
 		}
-		if(rleEncoding)
-			tga.writeBytes(runLengthEncoder(imgdata));
-		else
-			tga.writeBytes(imgdata);
-		
+	}
+	private function endWriteDataLoopEventHandler(e:TimerEvent = null):void {
+		if(loopTimer) {
+			loopTimer.removeEventListener(TimerEvent.TIMER, writeDataChunk);
+			loopTimer.removeEventListener(TimerEvent.TIMER_COMPLETE, endWriteDataLoopEventHandler);
+			loopTimer.stop();
+			loopTimer = null;
+		}
+		dispatchEvent(new Event(ThreadedEncoderEvent.DATA_CHUNK_WRITTEN));
+	}
+	
+	public function writeFooter(e:Event = null):void
+	{
         tga.position = 0;
-        return tga;
-    }
+		
+		dispatchEvent(new Event(ThreadedEncoderEvent.FOOTER_WRITTEN));
+	}
 	
 	private function createHeader(w:int, h:int):ByteArray {
         var HEAD:ByteArray = new ByteArray();
 		HEAD.endian = Endian.LITTLE_ENDIAN;
-		
-		//var id:String = "Batty Bovine Productions, LLC";
 		
 		HEAD.writeByte(0);	// No Image ID field
 		HEAD.writeByte(0);	// No colour map
@@ -240,8 +302,6 @@ public class TGAThreadedEncoder extends EventDispatcher implements IThreadedImag
 		
 		HEAD.writeByte(32);	// RGBA image (32bpp)
 		HEAD.writeByte(8);	// 8 attribute bits per pixel
-		
-		//HEAD.writeMultiByte(id,"iso-8859-1");	// Image ID
 		
         return HEAD;
 	}
@@ -303,39 +363,17 @@ public class TGAThreadedEncoder extends EventDispatcher implements IThreadedImag
 	
 	public function getEncodedImage():ByteArray
 	{
-		//return jpgdata;
-		return null;
+		return tga;
 	}
 	
 	public function setFilePath(file:String):void
 	{
-		//encodefile = dir;
-		return;
+		encodefile = file;
 	}
 	
 	public function getFilePath():String
 	{
-		//return encodefile;
-		return "";
-	}
-	
-	public function saveToFile(e:Event = null):Boolean
-	{
-		//try {
-			//var out:File = new File(encodefile);
-			//var fs:FileStream = new FileStream();
-			//fs.open(out, FileMode.WRITE);
-			//fs.writeBytes(pngdata);
-			//fs.close();
-		//} catch (e:Error) {
-			//trace(e.message);
-			//return false;
-		//}
-		//
-		//dispatchEvent(new ThreadedEncoderEvent(ThreadedEncoderEvent.ENCODE_COMPLETE));
-		//return true;
-		
-		return false;
+		return encodefile;
 	}
 	
 	
@@ -352,7 +390,7 @@ public class TGAThreadedEncoder extends EventDispatcher implements IThreadedImag
 	
 	public function setAffinity(value:Number):void
 	{
-		loopAffinity = Math.max(0,Math.min(value,100));
+		loopAffinity = Math.max(1,Math.min(value,100));
 	}
 	
 	public function getAffinity():Number
