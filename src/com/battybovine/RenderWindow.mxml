@@ -30,6 +30,8 @@
 		<![CDATA[
 			import com.battybovine.codec.*;
 			import com.battybovine.RenderWindow.SwfData;
+			import flash.geom.Point;
+			import flash.geom.Rectangle;
 			
 			import flash.display.Bitmap;
 			import flash.display.BitmapData;
@@ -397,6 +399,7 @@
 			
 			// Capture the current frame of the given SWFLoader object at the given dimensions and aspect ratio
 			public static function captureSWFFrame(swf:SWFLoader, capturewidth:int, captureheight:int, aspect:String = ""):Bitmap {
+				// Default settings appropriate for scaling to the output size
 				var fitaspect:Boolean = true;
 				var aspectcrop:Boolean = false;
 				var noscale:Boolean = false;
@@ -419,13 +422,18 @@
 				var scaley:Number = 1;
 				
 				if(!noscale) {
-					if(!fitaspect || aspectcrop) {
-						// Calculate the desired scale of our image based on the dimension that is proportionally larger than the desired output resolution
+					if(!fitaspect && !aspectcrop) {	// If we're letterboxing the final image
+						// ...calculate the desired scale of our image based on the dimension that is proportionally smaller than the desired output resolution
+						scalex = scaley = (((swf.height * capturewidth) / captureheight) >= swf.width)
+							? (captureheight / swf.height)
+							: (capturewidth / swf.width);
+					} else if(!fitaspect || aspectcrop) {	// If we're doing anything else but scaling the final image...
+						// ...calculate the desired scale of our image based on the dimension that is proportionally larger than the desired output resolution
 						scalex = scaley = (((swf.height * capturewidth) / captureheight) >= swf.width)
 							? (capturewidth / swf.width)
 							: (captureheight / swf.height);
-					} else {
-						// Scale each side of the SWF to match the dimensions of our output image
+					} else {	// If we're scaling the final output of the image...
+						// ...scale each side of the SWF to match the dimensions of our output image
 						scalex = capturewidth / swf.width;
 						scaley = captureheight / swf.height;
 					}
@@ -439,13 +447,19 @@
 				bd.draw(swf, scalematrix);
 				
 				var bm:Bitmap = null;
-				// Crop it down if we were asked to
-				if(fitaspect && aspectcrop) {
-					var crop:Rectangle = new Rectangle(((swf.width * scalex) - capturewidth) / 2, ((swf.height * scalex) - captureheight) / 2, capturewidth, captureheight);
-					var bdcrop:BitmapData = new BitmapData(crop.width, crop.height, true);
+				if(fitaspect && aspectcrop) {	// If we're cropping the image to fit the output...
+					// ...create a new bitmap at the desired size, and copy our oversized image to it
+					var crop:Rectangle = new Rectangle(((swf.width * scalex) - capturewidth) / 2, ((swf.height * scaley) - captureheight) / 2, capturewidth, captureheight);
+					var bdcrop:BitmapData = new BitmapData(crop.width, crop.height, false, 0);
 					bdcrop.copyPixels(bd, crop, new Point(0, 0));
 					bm = new Bitmap(bdcrop);
-				} else {
+				} else if(!fitaspect && !aspectcrop && !noscale) {	// If we're letterboxing the output...
+					// ...create an oversized bitmap canvas to copy the image onto
+					var letterbox:Rectangle = new Rectangle(0, 0, (swf.width * scalex), (swf.height * scaley));
+					var bdletterbox:BitmapData = new BitmapData(capturewidth, captureheight, false, 0);
+					bdletterbox.copyPixels(bd, letterbox, new Point((capturewidth - (swf.width * scalex)) / 2, (captureheight - (swf.height * scaley)) / 2));
+					bm = new Bitmap(bdletterbox);
+				} else {	// Otherwise, copy the image as-is
 					bm = new Bitmap(bd);
 				}
 				
