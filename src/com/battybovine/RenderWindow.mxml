@@ -71,6 +71,7 @@
 			
 			private var filequeue:Array = null;
 			private var renderswf:MovieClip = new MovieClip();
+			private var renderswfframe:int = 0;
 			
 			private var imageencoder:IThreadedImageEncoder = null;
 			
@@ -205,8 +206,9 @@
 				
 				// Initialise the SWF controller and prepare event listeners
 				renderswf = e.currentTarget.content as MovieClip;
-				renderswf.soundTransform = new SoundTransform(0,0);
-				renderswf.gotoAndStop(1);
+				renderswf.soundTransform = new SoundTransform(0, 0);
+				renderswfframe = 1;
+				renderswf.gotoAndStop(renderswfframe);
 				
 				// Configure the progress bar appropriately
 				var nextfile:File = new File(filequeue[0].file);
@@ -243,7 +245,7 @@
 				// Find the number of digits in the frame count and pad the current frame to that length
 				var j:int = filequeue[0].numFrames;
 				for (var i:int = 1; j >= 10; i++ ) { j /= 10; }
-				var framepad:String = "" + renderswf.currentFrame;
+				var framepad:String = "" + renderswfframe;
 				while (framepad.length < i) { framepad = "0" + framepad; }
 				
 				// Save the image
@@ -365,8 +367,9 @@
 				// Only continue if we haven't exhausted all frames in the SWF file
 				progressBarCurrent.setProgress(renderswf.currentFrame, progressBarCurrent.maximum);
 				progressBarTotal.setProgress(progressBarTotal.value + 1, progressBarTotal.maximum);
-				if ((renderswf.currentFrame) < renderswf.totalFrames) {
-					renderswf.gotoAndStop(renderswf.currentFrame + 1);
+				if ((renderswfframe) < renderswf.totalFrames) {
+					renderswfframe++;
+					renderswf.gotoAndStop(renderswfframe);
 					this.dispatchEvent(new Event(RENDER_NEXT_FRAME));
 				} else {
 					this.dispatchEvent(new Event(RENDER_COMPLETE));
